@@ -1,0 +1,175 @@
+import { Project, Task, TaskDependency } from './types';
+
+// Helper to create dates in January 2026
+const createDate = (day: number): Date => new Date(2026, 0, day);
+
+export const projects: Project[] = [
+  {
+    id: 'project-1',
+    name: 'My Project',
+    description: 'Manage and execute projects from start to finish.',
+  },
+  {
+    id: 'project-2',
+    name: 'Marketing Campaign',
+    description: 'Q1 2026 product launch marketing initiative.',
+  },
+  {
+    id: 'project-3',
+    name: 'Website Redesign',
+    description: 'Complete overhaul of company website with new branding.',
+  },
+];
+
+export const tasks: Task[] = [
+  // Project 1 tasks
+  {
+    id: 'task-1',
+    name: 'Task 1',
+    duration: 3,
+    description: 'Initial planning and requirements gathering phase. This includes stakeholder interviews and documentation.',
+    bufferTime: 1,
+    startDate: createDate(9),
+    targetCompletionDate: createDate(12),
+    status: 'not-started',
+    projectId: 'project-1',
+  },
+  {
+    id: 'task-2',
+    name: 'Task 2',
+    duration: 7,
+    description: 'Design and architecture phase. Create technical specifications and system design documents.',
+    bufferTime: 2,
+    startDate: createDate(12),
+    targetCompletionDate: createDate(19),
+    status: 'in-progress',
+    projectId: 'project-1',
+  },
+  {
+    id: 'task-3',
+    name: 'Task 3',
+    duration: 5,
+    description: 'Implementation phase. Build core functionality according to specifications.',
+    bufferTime: 1,
+    startDate: createDate(17),
+    targetCompletionDate: createDate(22),
+    status: 'done',
+    projectId: 'project-1',
+  },
+  // Project 2 tasks
+  {
+    id: 'task-4',
+    name: 'Market Research',
+    duration: 5,
+    description: 'Conduct market analysis and competitor research for the campaign.',
+    bufferTime: 2,
+    startDate: createDate(6),
+    targetCompletionDate: createDate(11),
+    status: 'done',
+    projectId: 'project-2',
+  },
+  {
+    id: 'task-5',
+    name: 'Content Creation',
+    duration: 10,
+    description: 'Create marketing materials, blog posts, and social media content.',
+    bufferTime: 3,
+    startDate: createDate(11),
+    targetCompletionDate: createDate(21),
+    status: 'in-progress',
+    projectId: 'project-2',
+  },
+  {
+    id: 'task-6',
+    name: 'Campaign Launch',
+    duration: 3,
+    description: 'Execute the marketing campaign across all channels.',
+    bufferTime: 1,
+    startDate: createDate(21),
+    targetCompletionDate: createDate(24),
+    status: 'not-started',
+    projectId: 'project-2',
+  },
+  {
+    id: 'task-7',
+    name: 'Analytics Review',
+    duration: 4,
+    description: 'Monitor campaign performance and create analytics report.',
+    bufferTime: 1,
+    startDate: createDate(24),
+    targetCompletionDate: createDate(28),
+    status: 'not-started',
+    projectId: 'project-2',
+  },
+  // Project 3 tasks
+  {
+    id: 'task-8',
+    name: 'Design Mockups',
+    duration: 7,
+    description: 'Create wireframes and high-fidelity mockups for all pages.',
+    bufferTime: 2,
+    startDate: createDate(5),
+    targetCompletionDate: createDate(12),
+    status: 'done',
+    projectId: 'project-3',
+  },
+  {
+    id: 'task-9',
+    name: 'Frontend Development',
+    duration: 14,
+    description: 'Build responsive frontend with React and Tailwind CSS.',
+    bufferTime: 3,
+    startDate: createDate(12),
+    targetCompletionDate: createDate(26),
+    status: 'in-progress',
+    projectId: 'project-3',
+  },
+  {
+    id: 'task-10',
+    name: 'Backend Integration',
+    duration: 7,
+    description: 'Connect frontend to backend APIs and database.',
+    bufferTime: 2,
+    startDate: createDate(20),
+    targetCompletionDate: createDate(27),
+    status: 'not-started',
+    projectId: 'project-3',
+  },
+  {
+    id: 'task-11',
+    name: 'Testing & QA',
+    duration: 5,
+    description: 'Comprehensive testing including unit, integration, and E2E tests.',
+    bufferTime: 2,
+    startDate: createDate(27),
+    targetCompletionDate: createDate(32),
+    status: 'not-started',
+    projectId: 'project-3',
+  },
+  {
+    id: 'task-12',
+    name: 'Deployment',
+    duration: 2,
+    description: 'Deploy to production environment and configure monitoring.',
+    bufferTime: 1,
+    startDate: createDate(32),
+    targetCompletionDate: createDate(34),
+    status: 'not-started',
+    projectId: 'project-3',
+  },
+];
+
+export const dependencies: TaskDependency[] = [
+  // Project 1 dependencies: Task 1 -> Task 2 -> Task 3
+  { taskId: 'task-2', dependsOnTaskId: 'task-1' },
+  { taskId: 'task-3', dependsOnTaskId: 'task-2' },
+  // Project 2 dependencies
+  { taskId: 'task-5', dependsOnTaskId: 'task-4' },
+  { taskId: 'task-6', dependsOnTaskId: 'task-5' },
+  { taskId: 'task-7', dependsOnTaskId: 'task-6' },
+  // Project 3 dependencies
+  { taskId: 'task-9', dependsOnTaskId: 'task-8' },
+  { taskId: 'task-10', dependsOnTaskId: 'task-9' },
+  { taskId: 'task-11', dependsOnTaskId: 'task-10' },
+  { taskId: 'task-12', dependsOnTaskId: 'task-11' },
+];
