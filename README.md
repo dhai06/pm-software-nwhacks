@@ -67,7 +67,7 @@ A hybrid Project Management tool combining **Critical Path Method (CPM)** for ex
 ## 🛠 Tech Stack
 
 ### Frontend
-- **Framework:** Next.js 14 (App Router)
+- **Framework:** Next.js 16 (App Router) + React 19
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS + Shadcn/UI
 - **State:** Zustand
@@ -84,7 +84,7 @@ A hybrid Project Management tool combining **Critical Path Method (CPM)** for ex
 
 ### ✅ Completed
 - [x] Monorepo structure created
-- [x] Next.js 14 app initialized with TypeScript
+- [x] Next.js 16 app initialized with TypeScript and React 19
 - [x] Core dependencies installed (zustand, reactflow, dnd-kit, supabase)
 - [x] TypeScript type definitions (Task, Dependency, Graph, Validation)
 - [x] Zustand stores (projectStore, uiStore)

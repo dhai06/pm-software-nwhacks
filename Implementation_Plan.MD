@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Based on:** PRD v3.2
-**Tech Stack:** Next.js 14 (App Router), Supabase, FastAPI (Python), Zustand, React Flow.
+**Tech Stack:** Next.js 16 (App Router), React 19, Supabase, FastAPI (Python), Zustand, React Flow.
 
 ---
 
