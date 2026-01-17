@@ -9,6 +9,3 @@ app.include_router(tasks.router)
 @app.get("/")
 def root():
     return {"status": "Backend running"}
-
-
-    asdfasdf
