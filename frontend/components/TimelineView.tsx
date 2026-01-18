@@ -14,7 +14,7 @@ import {
 import 'reactflow/dist/style.css';
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
-import { Task, TaskDependency } from '@/lib/types';
+import { Task, TaskDependency, STATUS_COLORS } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 
 interface TimelineViewProps {
@@ -37,13 +37,20 @@ const AVAILABLE_MONTHS = [
   { year: 2026, month: 2, label: 'March 2026' },
 ];
 
-// Custom task node component
+// Custom task node component with status indicator
 function TaskNode({ data }: { data: { task: Task; projectId: string; width: number } }) {
+  const statusColor = STATUS_COLORS[data.task.status];
+
   return (
-    <div 
-      className="bg-stone-100 border border-stone-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center"
+    <div
+      className="bg-stone-100 border border-stone-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center gap-2"
       style={{ width: data.width, minWidth: 80 }}
     >
+      {/* Status indicator dot */}
+      <div
+        className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor.dot}`}
+        title={data.task.status}
+      />
       <span className="text-sm font-medium text-stone-800 whitespace-nowrap overflow-hidden text-ellipsis">
         {data.task.name}
       </span>
@@ -183,9 +190,9 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
 
     sortedTasks.forEach(task => {
       let assignedRow = -1;
-      // Find the first row where the task can fit (start date must be after end date, not same day)
+      // Find the first row where the task can fit (start date must be >= end date since end date is not visually occupied)
       for (let i = 0; i < rowEndDates.length; i++) {
-        if (task.startDate > rowEndDates[i]) {
+        if (task.startDate >= rowEndDates[i]) {
           assignedRow = i;
           break;
         }
@@ -201,8 +208,8 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     return tasks.map(task => {
       const dayOffset = differenceInDays(task.startDate, startDate);
       const row = taskRows.get(task.id) || 0;
-      // Calculate width based on duration from start to end date
-      const durationDays = differenceInDays(task.targetCompletionDate, task.startDate) + 1;
+      // Calculate width based on duration from start to end date (exclusive of end date)
+      const durationDays = differenceInDays(task.targetCompletionDate, task.startDate);
       const width = durationDays * DAY_WIDTH;
 
       return {
@@ -219,7 +226,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     });
   }, [tasks, startDate, projectId]);
 
-  // Create edges for dependencies
+  // Create edges for dependencies with curved bezier arrows
   const edges: Edge[] = useMemo(() => {
     return dependencies
       .filter(dep => {
@@ -231,11 +238,13 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         id: `${dep.dependsOnTaskId}-${dep.taskId}`,
         source: dep.dependsOnTaskId,
         target: dep.taskId,
-        type: 'smoothstep',
-        style: { stroke: '#A8A29E', strokeWidth: 2 },
+        type: 'default', // Bezier curve for smooth curved arrows
+        style: { stroke: '#8B95A5', strokeWidth: 2 },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: '#A8A29E',
+          color: '#8B95A5',
+          width: 15,
+          height: 15,
         },
       }));
   }, [dependencies, tasks]);
