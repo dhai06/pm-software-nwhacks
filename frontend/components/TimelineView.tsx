@@ -4,15 +4,12 @@ import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
-  Controls,
   Node,
   Edge,
   Position,
   MarkerType,
   NodeMouseHandler,
   Handle,
-  BezierEdge,
-  EdgeProps,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
@@ -68,14 +65,7 @@ const nodeTypes = {
   taskNode: TaskNode,
 };
 
-// Custom edge component with aggressive curvature
-function CustomBezierEdge(props: EdgeProps) {
-  return <BezierEdge {...props} pathOptions={{ curvature: 3 }} />;
-}
-
-const edgeTypes = {
-  customBezier: CustomBezierEdge,
-};
+// No custom edge needed - using built-in smoothstep for predictable paths
 
 // Accent blue color for edges
 const EDGE_COLOR = '#3B82F6';
@@ -195,17 +185,17 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     setIsDragging(false);
   }, []);
 
-  // Calculate node positions based on task dates with dependency-aware layout
+  // Calculate node positions based on task dates with TWO-PASS dependency-aware layout
   const nodes: Node[] = useMemo(() => {
     // Build dependency graph for topological sorting
     const dependencyMap = new Map<string, string[]>(); // taskId -> tasks that depend on it
     const prerequisiteMap = new Map<string, string[]>(); // taskId -> tasks it depends on
-    
+
     tasks.forEach(task => {
       dependencyMap.set(task.id, []);
       prerequisiteMap.set(task.id, []);
     });
-    
+
     dependencies.forEach(dep => {
       const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
       const targetTask = tasks.find(t => t.id === dep.taskId);
@@ -259,96 +249,205 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       }
     });
 
-    // Row assignment with dependency-aware collision avoidance
-    const taskRows: Map<string, number> = new Map();
-    const rowEndDates: Date[] = [];
-    
-    // Track placed tasks with their time windows for vertical shadow checking
-    const placedTasks: Array<{ id: string; row: number; startDate: Date; endDate: Date }> = [];
+    // =====================================================
+    // TWO-PASS ALGORITHM FOR EDGE-AWARE ROW ASSIGNMENT
+    // =====================================================
 
-    // Helper: Check if placing a task at a row would intersect with any edge's vertical shadow
-    const wouldIntersectEdge = (taskStartDate: Date, taskEndDate: Date, targetRow: number, taskId: string): boolean => {
-      // Check all edges that might cross through this row
-      for (const dep of dependencies) {
-        const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
-        const targetTask = tasks.find(t => t.id === dep.taskId);
-        
-        if (!sourceTask || !targetTask) continue;
-        // Skip if this edge involves the task we're placing
-        if (dep.dependsOnTaskId === taskId || dep.taskId === taskId) continue;
-        
-        const sourceRow = taskRows.get(sourceTask.id);
-        const targetRowNum = taskRows.get(targetTask.id);
-        
-        // Both source and target must be already placed to check shadow
-        if (sourceRow === undefined || targetRowNum === undefined) continue;
-        
-        const minRow = Math.min(sourceRow, targetRowNum);
-        const maxRow = Math.max(sourceRow, targetRowNum);
-        
-        // Check if target row is between the edge's rows (exclusive)
-        if (targetRow <= minRow || targetRow >= maxRow) continue;
-        
-        // Calculate the time window where the edge exists
-        // Edge goes from source's end (right side) to target's start (left side)
-        const edgeStartX = sourceTask.targetCompletionDate;
-        const edgeEndX = targetTask.startDate;
-        
-        // If the edge time window overlaps with task time window, it's a collision
-        // Using a slightly expanded window for safety
-        const taskStart = taskStartDate.getTime();
-        const taskEnd = taskEndDate.getTime();
-        const edgeStart = Math.min(edgeStartX.getTime(), edgeEndX.getTime());
-        const edgeEnd = Math.max(edgeStartX.getTime(), edgeEndX.getTime());
-        
-        // Check for overlap
-        if (taskStart < edgeEnd && taskEnd > edgeStart) {
-          return true;
+    const taskRows: Map<string, number> = new Map();
+
+    // Helper: Check if two time ranges overlap
+    const timeRangesOverlap = (start1: Date, end1: Date, start2: Date, end2: Date): boolean => {
+      return start1.getTime() < end2.getTime() && end1.getTime() > start2.getTime();
+    };
+
+    // Helper: Get tasks in a specific row
+    const getTasksInRow = (row: number): Task[] => {
+      return tasks.filter(t => taskRows.get(t.id) === row);
+    };
+
+    // Helper: Check if a task can fit in a row (no time overlap with other tasks)
+    const canFitInRow = (task: Task, row: number): boolean => {
+      const tasksInRow = getTasksInRow(row);
+      for (const other of tasksInRow) {
+        if (other.id === task.id) continue;
+        if (timeRangesOverlap(task.startDate, task.targetCompletionDate,
+                              other.startDate, other.targetCompletionDate)) {
+          return false;
         }
       }
-      return false;
+      return true;
     };
+
+    // Helper: Calculate the edge shadow zone for smoothstep edges
+    // Smoothstep edges go: horizontal → vertical → horizontal
+    // The vertical segment is at the midpoint between source end and target start
+    const getEdgeShadow = (dep: TaskDependency) => {
+      const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
+      const targetTask = tasks.find(t => t.id === dep.taskId);
+
+      if (!sourceTask || !targetTask) return null;
+
+      const sourceRow = taskRows.get(sourceTask.id);
+      const targetRow = taskRows.get(targetTask.id);
+
+      if (sourceRow === undefined || targetRow === undefined) return null;
+
+      // Edge time window (horizontal extent)
+      const edgeStartTime = sourceTask.targetCompletionDate.getTime();
+      const edgeEndTime = targetTask.startDate.getTime();
+
+      // Handle case where tasks might overlap in time
+      const shadowStartTime = Math.min(edgeStartTime, edgeEndTime);
+      const shadowEndTime = Math.max(edgeStartTime, edgeEndTime);
+
+      return {
+        sourceRow,
+        targetRow,
+        minRow: Math.min(sourceRow, targetRow),
+        maxRow: Math.max(sourceRow, targetRow),
+        shadowStartTime,
+        shadowEndTime,
+        sourceTaskId: sourceTask.id,
+        targetTaskId: targetTask.id,
+      };
+    };
+
+    // Helper: Check if a task intersects with an edge shadow
+    const taskIntersectsEdge = (task: Task, edgeShadow: ReturnType<typeof getEdgeShadow>): boolean => {
+      if (!edgeShadow) return false;
+
+      const taskRow = taskRows.get(task.id);
+      if (taskRow === undefined) return false;
+
+      // Skip if this task is an endpoint of the edge
+      if (task.id === edgeShadow.sourceTaskId || task.id === edgeShadow.targetTaskId) {
+        return false;
+      }
+
+      // FIX: Use inclusive check for rows (the edge passes through ALL rows from min to max)
+      // For smoothstep: the edge touches source row, all intermediate rows, AND target row
+      if (taskRow < edgeShadow.minRow || taskRow > edgeShadow.maxRow) {
+        return false;
+      }
+
+      // For rows at the endpoints (source or target row), only the horizontal segment matters
+      // For intermediate rows, check if task overlaps with the edge's time window
+      const taskStartTime = task.startDate.getTime();
+      const taskEndTime = task.targetCompletionDate.getTime();
+
+      // Check horizontal overlap
+      if (taskStartTime >= edgeShadow.shadowEndTime || taskEndTime <= edgeShadow.shadowStartTime) {
+        return false;
+      }
+
+      return true;
+    };
+
+    // =====================================================
+    // PASS 1: Initial row assignment (time-overlap only)
+    // =====================================================
+    const rowEndDates: Date[] = [];
 
     sortedTasks.forEach(task => {
       let assignedRow = -1;
-      
-      // Find the first row where:
-      // 1. The task doesn't overlap time-wise with other tasks in that row
-      // 2. The task doesn't intersect any edge's vertical shadow
+
+      // Find first row where the task fits (no time overlap)
       for (let row = 0; row <= rowEndDates.length; row++) {
-        // Check time overlap with existing tasks in this row
-        const timeConflict = row < rowEndDates.length && task.startDate < rowEndDates[row];
-        
-        if (!timeConflict) {
-          // Check vertical shadow intersection
-          if (!wouldIntersectEdge(task.startDate, task.targetCompletionDate, row, task.id)) {
-            assignedRow = row;
-            break;
-          }
+        if (row >= rowEndDates.length || task.startDate >= rowEndDates[row]) {
+          assignedRow = row;
+          break;
         }
       }
-      
-      // If no suitable row found, create a new one
+
       if (assignedRow === -1) {
         assignedRow = rowEndDates.length;
       }
-      
+
       taskRows.set(task.id, assignedRow);
-      
-      // Update row end date (extend if necessary)
+
+      // Update row end date
       if (assignedRow >= rowEndDates.length) {
         rowEndDates.push(task.targetCompletionDate);
       } else if (task.targetCompletionDate > rowEndDates[assignedRow]) {
         rowEndDates[assignedRow] = task.targetCompletionDate;
       }
-      
-      placedTasks.push({
-        id: task.id,
-        row: assignedRow,
-        startDate: task.startDate,
-        endDate: task.targetCompletionDate,
-      });
     });
+
+    // =====================================================
+    // PASS 2: Edge collision detection and resolution
+    // =====================================================
+    const MAX_ITERATIONS = 10;
+    let iteration = 0;
+    let hasConflicts = true;
+
+    while (hasConflicts && iteration < MAX_ITERATIONS) {
+      hasConflicts = false;
+      iteration++;
+
+      // Check each edge for conflicts with tasks
+      for (const dep of dependencies) {
+        const edgeShadow = getEdgeShadow(dep);
+        if (!edgeShadow) continue;
+
+        // Only check edges that span multiple rows (have a vertical component)
+        if (edgeShadow.minRow === edgeShadow.maxRow) continue;
+
+        // Find tasks that intersect with this edge
+        for (const task of tasks) {
+          if (taskIntersectsEdge(task, edgeShadow)) {
+            hasConflicts = true;
+
+            // Move the conflicting task to a new row
+            // Try rows below the edge first, then above
+            let newRow = edgeShadow.maxRow + 1;
+
+            // Find a row where the task fits and doesn't conflict
+            let foundRow = false;
+            for (let tryRow = newRow; tryRow < newRow + 10; tryRow++) {
+              if (canFitInRow(task, tryRow)) {
+                // Check this new position doesn't create new edge conflicts
+                const oldRow = taskRows.get(task.id);
+                taskRows.set(task.id, tryRow);
+
+                let hasNewConflict = false;
+                for (const otherDep of dependencies) {
+                  const otherShadow = getEdgeShadow(otherDep);
+                  if (otherShadow && taskIntersectsEdge(task, otherShadow)) {
+                    hasNewConflict = true;
+                    break;
+                  }
+                }
+
+                if (!hasNewConflict) {
+                  foundRow = true;
+                  // Update rowEndDates for the new row
+                  while (rowEndDates.length <= tryRow) {
+                    rowEndDates.push(new Date(0));
+                  }
+                  if (task.targetCompletionDate > rowEndDates[tryRow]) {
+                    rowEndDates[tryRow] = task.targetCompletionDate;
+                  }
+                  break;
+                } else {
+                  // Revert
+                  taskRows.set(task.id, oldRow!);
+                }
+              }
+            }
+
+            if (!foundRow) {
+              // If we couldn't find a good row, just push to a new row at the end
+              const lastRow = Math.max(...Array.from(taskRows.values())) + 1;
+              taskRows.set(task.id, lastRow);
+              while (rowEndDates.length <= lastRow) {
+                rowEndDates.push(new Date(0));
+              }
+              rowEndDates[lastRow] = task.targetCompletionDate;
+            }
+          }
+        }
+      }
+    }
 
     return tasks.map(task => {
       const dayOffset = differenceInDays(task.startDate, startDate);
@@ -371,7 +470,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     });
   }, [tasks, dependencies, startDate, projectId]);
 
-  // Create edges for dependencies with aggressive Bezier curves and open arrow markers
+  // Create edges for dependencies using smoothstep routing
   const edges: Edge[] = useMemo(() => {
     return dependencies
       .filter(dep => {
@@ -383,8 +482,8 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         id: `${dep.dependsOnTaskId}-${dep.taskId}`,
         source: dep.dependsOnTaskId,
         target: dep.taskId,
-        type: 'customBezier',
-        style: { stroke: EDGE_COLOR, strokeWidth: 2 , strokeLinecap: 'round'},
+        type: 'smoothstep',
+        style: { stroke: EDGE_COLOR, strokeWidth: 2, strokeLinecap: 'round' },
         markerEnd: {
           type: MarkerType.Arrow,
           color: EDGE_COLOR,
@@ -612,7 +711,6 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
             fitView={false}
             panOnDrag={false}
             zoomOnScroll={false}
