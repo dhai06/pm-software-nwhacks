@@ -9,7 +9,9 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  closestCorners,
+  pointerWithin,
+  rectIntersection,
+  CollisionDetection,
 } from '@dnd-kit/core';
 import { useState } from 'react';
 import { Task, TaskStatus } from '@/lib/types';
@@ -21,6 +23,27 @@ interface BoardViewProps {
 }
 
 const COLUMNS: TaskStatus[] = ['not-started', 'in-progress', 'done'];
+
+// Custom collision detection that prioritizes column droppables
+const customCollisionDetection: CollisionDetection = (args) => {
+  // First, check for pointer within collisions
+  const pointerCollisions = pointerWithin(args);
+  
+  // If we have collisions, prioritize column droppables
+  if (pointerCollisions.length > 0) {
+    // Check if any collision is with a column
+    const columnCollision = pointerCollisions.find(collision => 
+      COLUMNS.includes(collision.id as TaskStatus)
+    );
+    if (columnCollision) {
+      return [columnCollision];
+    }
+    return pointerCollisions;
+  }
+  
+  // Fall back to rect intersection
+  return rectIntersection(args);
+};
 
 export function BoardView({ tasks }: BoardViewProps) {
   const updateTaskStatus = useProjectStore(state => state.updateTaskStatus);
@@ -87,7 +110,7 @@ export function BoardView({ tasks }: BoardViewProps) {
     <div className="flex-1 overflow-auto p-6">
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={customCollisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >

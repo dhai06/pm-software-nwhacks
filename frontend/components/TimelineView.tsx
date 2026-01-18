@@ -821,31 +821,34 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
 
   // Create edges for dependencies
   const edges: Edge[] = useMemo(() => {
-    if (!hoveredTaskId) return [];
-
     return dependencies
-      .filter(dep => {
-        return dep.taskId === hoveredTaskId || dep.dependsOnTaskId === hoveredTaskId;
-      })
       .filter(dep => {
         const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
         const targetTask = tasks.find(t => t.id === dep.taskId);
         return sourceTask && targetTask;
       })
-      .map(dep => ({
-        id: `${dep.dependsOnTaskId}-${dep.taskId}`,
-        source: dep.dependsOnTaskId,
-        target: dep.taskId,
-        type: 'bezier',
-        animated: true,
-        style: { stroke: EDGE_COLOR, strokeWidth: 2 },
-        markerEnd: {
-          type: MarkerType.Arrow,
-          color: EDGE_COLOR,
-          width: 20,
-          height: 20,
-        },
-      }));
+      .map(dep => {
+        // Check if this edge is related to the hovered task
+        const isRelatedToHover = hoveredTaskId && 
+          (dep.taskId === hoveredTaskId || dep.dependsOnTaskId === hoveredTaskId);
+        
+        return {
+          id: `${dep.dependsOnTaskId}-${dep.taskId}`,
+          source: dep.dependsOnTaskId,
+          target: dep.taskId,
+          type: 'bezier',
+          animated: true,
+          // Pulse when not hovered, solid when hovered
+          className: isRelatedToHover ? '' : 'pulsing',
+          style: { stroke: EDGE_COLOR, strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.Arrow,
+            color: EDGE_COLOR,
+            width: 20,
+            height: 20,
+          },
+        };
+      });
   }, [dependencies, tasks, hoveredTaskId]);
 
   // Handle node clicks

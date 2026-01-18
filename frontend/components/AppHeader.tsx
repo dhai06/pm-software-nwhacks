@@ -146,11 +146,11 @@ export function AppHeader() {
         {/* App title */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-stone-900">Task Manager</h1>
+            <h1 className="text-2xl font-bold text-stone-900">Cafe Opening</h1>
           </div>
           <AccountMenu />
         </div>
-        <p className="text-stone-400 text-sm">Manage and track your tasks</p>
+        <p className="text-stone-400 text-sm">Grand Opening June 2026</p>
       </div>
 
       {/* Navigation tabs */}
