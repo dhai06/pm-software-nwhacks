@@ -2,9 +2,9 @@
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Link from 'next/link';
 import { Task } from '@/lib/types';
-import { ProjectIcon } from './ProjectIcon';
+import { useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface TaskCardProps {
   task: Task;
@@ -12,6 +12,7 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, projectId }: TaskCardProps) {
+  const router = useRouter();
   const {
     attributes,
     listeners,
@@ -27,6 +28,14 @@ export function TaskCard({ task, projectId }: TaskCardProps) {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Store that we're coming from board view
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`project_${projectId}_lastView`, 'board');
+    }
+    router.push(`/projects/${projectId}/tasks/${task.id}`);
+  }, [projectId, task.id, router]);
+
   return (
     <div
       ref={setNodeRef}
@@ -35,12 +44,12 @@ export function TaskCard({ task, projectId }: TaskCardProps) {
       {...listeners}
       className="touch-none"
     >
-      <Link href={`/projects/${projectId}/tasks/${task.id}`}>
-        <div className="bg-white border border-gray-200 rounded-lg px-3 py-3 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer flex items-center gap-2">
-          <ProjectIcon size="sm" />
-          <span className="text-sm font-medium text-gray-700">{task.name}</span>
-        </div>
-      </Link>
+      <div 
+        onClick={handleClick}
+        className="bg-white border border-gray-200 rounded-lg px-3 py-3 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer"
+      >
+        <span className="text-sm font-medium text-gray-700">{task.name}</span>
+      </div>
     </div>
   );
 }

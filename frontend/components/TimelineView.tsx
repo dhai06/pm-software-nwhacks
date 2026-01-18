@@ -9,13 +9,13 @@ import {
   Edge,
   Position,
   MarkerType,
+  NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Task, TaskDependency } from '@/lib/types';
-import { ProjectIcon } from './ProjectIcon';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface TimelineViewProps {
   projectId: string;
@@ -30,16 +30,16 @@ const HEADER_HEIGHT = 80;
 const LEFT_MARGIN = 20;
 
 // Custom task node component
-function TaskNode({ data }: { data: { task: Task; projectId: string } }) {
+function TaskNode({ data }: { data: { task: Task; projectId: string; width: number } }) {
   return (
-    <Link href={`/projects/${data.projectId}/tasks/${data.task.id}`}>
-      <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center gap-2 min-w-[100px]">
-        <ProjectIcon size="sm" />
-        <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-          {data.task.name}
-        </span>
-      </div>
-    </Link>
+    <div 
+      className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center"
+      style={{ width: data.width, minWidth: 80 }}
+    >
+      <span className="text-sm font-medium text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">
+        {data.task.name}
+      </span>
+    </div>
   );
 }
 
@@ -48,14 +48,19 @@ const nodeTypes = {
 };
 
 export function TimelineView({ projectId, tasks, dependencies }: TimelineViewProps) {
-  // Get date range for the timeline (January 2026)
-  const baseDate = new Date(2026, 0, 1); // January 1, 2026
-  const startDate = startOfMonth(baseDate);
-  const endDate = addDays(endOfMonth(addDays(baseDate, 45)), 7); // Extended to early February
+  const router = useRouter();
+
+  // Get date range for the timeline (January 2026) - use useMemo to ensure stable references
+  const { baseDate, startDate, endDate } = useMemo(() => {
+    const base = new Date(2026, 0, 1); // January 1, 2026
+    const start = startOfMonth(base);
+    const end = addDays(endOfMonth(addDays(base, 45)), 7); // Extended to early February
+    return { baseDate: base, startDate: start, endDate: end };
+  }, []);
 
   const days = useMemo(() => {
     return eachDayOfInterval({ start: startDate, end: endDate });
-  }, []);
+  }, [startDate, endDate]);
 
   const today = new Date(2026, 0, 17); // Current date as shown in the example
 
@@ -86,6 +91,9 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     return tasks.map(task => {
       const dayOffset = differenceInDays(task.startDate, startDate);
       const row = taskRows.get(task.id) || 0;
+      // Calculate width based on duration from start to end date
+      const durationDays = differenceInDays(task.targetCompletionDate, task.startDate) + 1;
+      const width = durationDays * DAY_WIDTH;
 
       return {
         id: task.id,
@@ -94,7 +102,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
           x: LEFT_MARGIN + dayOffset * DAY_WIDTH,
           y: HEADER_HEIGHT + row * ROW_HEIGHT,
         },
-        data: { task, projectId },
+        data: { task, projectId, width },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
@@ -125,6 +133,15 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
   const handleNewClick = useCallback(() => {
     alert('Feature coming soon');
   }, []);
+
+  // Handle node clicks - navigate to task page and store current view
+  const handleNodeClick: NodeMouseHandler = useCallback((event, node) => {
+    // Store that we're coming from timeline view
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`project_${projectId}_lastView`, 'timeline');
+    }
+    router.push(`/projects/${projectId}/tasks/${node.id}`);
+  }, [projectId, router]);
 
   // Calculate today marker position
   const todayOffset = differenceInDays(today, startDate);
@@ -168,9 +185,8 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             return (
               <div
                 key={index}
-                className={`flex-shrink-0 text-center py-2 text-sm ${
-                  isWeekend ? 'bg-gray-50' : ''
-                }`}
+                className={`flex-shrink-0 text-center py-2 text-sm ${isWeekend ? 'bg-gray-50' : ''
+                  }`}
                 style={{ width: DAY_WIDTH }}
               >
                 <span className={`${isToday ? 'bg-blue-500 text-white rounded-full px-2 py-1' : 'text-gray-500'}`}>
@@ -232,7 +248,8 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             preventScrolling={false}
             nodesDraggable={false}
             nodesConnectable={false}
-            elementsSelectable={false}
+            elementsSelectable={true}
+            onNodeClick={handleNodeClick}
             minZoom={1}
             maxZoom={1}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}

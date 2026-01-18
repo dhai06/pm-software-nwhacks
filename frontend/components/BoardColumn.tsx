@@ -56,7 +56,7 @@ export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
           className="flex items-center gap-1 px-3 py-2 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <Plus size={14} />
-          New project
+          New Task
         </button>
       </div>
     </div>

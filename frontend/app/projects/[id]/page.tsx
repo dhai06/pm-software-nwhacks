@@ -1,6 +1,6 @@
 'use client';
 
-import { use } from 'react';
+import { use, useMemo, useEffect } from 'react';
 import { notFound } from 'next/navigation';
 import { useProjectStore } from '@/lib/store';
 import { ProjectHeader } from '@/components/ProjectHeader';
@@ -12,13 +12,36 @@ interface ProjectPageProps {
 
 export default function ProjectPage({ params }: ProjectPageProps) {
   const { id } = use(params);
-  const project = useProjectStore(state => state.getProject(id));
-  const tasks = useProjectStore(state => state.getTasksByProject(id));
-  const dependencies = useProjectStore(state =>
-    state.dependencies.filter(d =>
-      tasks.some(t => t.id === d.taskId) || tasks.some(t => t.id === d.dependsOnTaskId)
-    )
+
+  // Store that we're on timeline view
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`project_${id}_lastView`, 'timeline');
+    }
+  }, [id]);
+  
+  // Select raw state to avoid creating new objects on each render
+  const projects = useProjectStore(state => state.projects);
+  const allTasks = useProjectStore(state => state.tasks);
+  const allDependencies = useProjectStore(state => state.dependencies);
+  
+  // Derive values with useMemo to maintain referential stability
+  const project = useMemo(
+    () => projects.find(p => p.id === id),
+    [projects, id]
   );
+  
+  const tasks = useMemo(
+    () => allTasks.filter(t => t.projectId === id),
+    [allTasks, id]
+  );
+  
+  const dependencies = useMemo(() => {
+    const taskIds = new Set(tasks.map(t => t.id));
+    return allDependencies.filter(
+      d => taskIds.has(d.taskId) || taskIds.has(d.dependsOnTaskId)
+    );
+  }, [allDependencies, tasks]);
 
   if (!project) {
     notFound();
