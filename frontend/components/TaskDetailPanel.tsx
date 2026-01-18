@@ -3,7 +3,6 @@
 import { format } from 'date-fns';
 import { Calendar, CircleDot, Hash, List, Clock, FileText } from 'lucide-react';
 import { Task, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
-import { ProjectIcon } from './ProjectIcon';
 import { useProjectStore } from '@/lib/store';
 
 interface TaskDetailPanelProps {
@@ -20,9 +19,8 @@ export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
 
   return (
     <div className="max-w-2xl mx-auto p-8">
-      {/* Header with icon */}
+      {/* Header */}
       <div className="mb-8">
-        <ProjectIcon size="lg" className="mb-6" />
         <h1 className="text-3xl font-bold text-gray-900">{task.name}</h1>
       </div>
 

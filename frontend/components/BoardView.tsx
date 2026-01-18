@@ -15,7 +15,6 @@ import { useState } from 'react';
 import { Task, TaskStatus } from '@/lib/types';
 import { useProjectStore } from '@/lib/store';
 import { BoardColumn } from './BoardColumn';
-import { ProjectIcon } from './ProjectIcon';
 
 interface BoardViewProps {
   projectId: string;
@@ -106,8 +105,7 @@ export function BoardView({ projectId, tasks }: BoardViewProps) {
 
         <DragOverlay>
           {activeTask ? (
-            <div className="bg-white border border-gray-300 rounded-lg px-3 py-3 shadow-lg flex items-center gap-2 w-[280px]">
-              <ProjectIcon size="sm" />
+            <div className="bg-white border border-gray-300 rounded-lg px-3 py-3 shadow-lg w-[280px]">
               <span className="text-sm font-medium text-gray-700">
                 {activeTask.name}
               </span>
