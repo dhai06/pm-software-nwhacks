@@ -15,7 +15,7 @@ import {
   useNodesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { format, addDays, differenceInDays, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { Task, TaskDependency, STATUS_COLORS } from '@/lib/types';
 import { useRouter } from 'next/navigation';
@@ -26,20 +26,23 @@ interface TimelineViewProps {
   dependencies: TaskDependency[];
 }
 
+// View mode types for timeline zoom levels
+type ViewMode = 'day' | 'week' | 'month' | 'year';
+
+// Configuration for each view mode
+const VIEW_MODE_CONFIG: Record<ViewMode, { label: string; scrollDays: number }> = {
+  day: { label: 'Day', scrollDays: 1 },
+  week: { label: 'Week', scrollDays: 7 },
+  month: { label: 'Month', scrollDays: 30 },
+  year: { label: 'Year', scrollDays: 365 },
+};
+
 // Constants for timeline layout
 const DAY_WIDTH = 52;
 const DAY_GAP = 4;
 const ROW_HEIGHT = 60;
 const HEADER_HEIGHT = 80;
 const LEFT_MARGIN = 20;
-
-// Available months for the dropdown
-const AVAILABLE_MONTHS = [
-  { year: 2025, month: 11, label: 'December 2025' },
-  { year: 2026, month: 0, label: 'January 2026' },
-  { year: 2026, month: 1, label: 'February 2026' },
-  { year: 2026, month: 2, label: 'March 2026' },
-];
 
 // Custom task node component with status indicator and resize handles
 // Memoized to prevent unnecessary re-renders during drag
@@ -172,6 +175,8 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [isDraggingScroll, setIsDraggingScroll] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
+  const [isViewModeDropdownOpen, setIsViewModeDropdownOpen] = useState(false);
 
   // State for edge resizing - this is the key state that controls resize behavior
   const [isEdgeResizing, setIsEdgeResizing] = useState(false);
@@ -195,11 +200,11 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
     nodesRef.current = nodes;
   }, [nodes]);
 
-  // Get date range for the timeline (January 2026) - use useMemo to ensure stable references
+  // Get date range for the timeline - reasonable window around current year
+  // Supports 2 years before and after current focus for smooth navigation
   const { startDate, endDate } = useMemo(() => {
-    const base = new Date(2025, 11, 1); // December 1, 2025 (extended start)
-    const start = startOfMonth(base);
-    const end = addDays(endOfMonth(new Date(2026, 2, 1)), 7); // Extended to early April 2026
+    const start = new Date(2025, 0, 1); // January 1, 2025
+    const end = new Date(2027, 11, 31); // December 31, 2027
     return { startDate: start, endDate: end };
   }, []);
 
@@ -215,14 +220,15 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
     if (scrollContainerRef.current && !hasCenteredRef.current) {
       const todayOffset = differenceInDays(today, startDate);
       const containerWidth = scrollContainerRef.current.clientWidth;
-      const todayPosition = LEFT_MARGIN + todayOffset * DAY_WIDTH + DAY_WIDTH / 2;
+      // Account for DAY_GAP in position calculation
+      const todayPosition = LEFT_MARGIN + todayOffset * (DAY_WIDTH + DAY_GAP) + DAY_WIDTH / 2;
       const centeredScrollLeft = todayPosition - containerWidth / 2;
-      
+
       scrollContainerRef.current.scrollLeft = Math.max(0, centeredScrollLeft);
       hasCenteredRef.current = true;
-      
+
       // Set initial visible date based on centered scroll position
-      const dayIndex = Math.floor(centeredScrollLeft / DAY_WIDTH);
+      const dayIndex = Math.floor(Math.max(0, centeredScrollLeft - LEFT_MARGIN) / (DAY_WIDTH + DAY_GAP));
       setVisibleDate(addDays(startDate, Math.max(0, dayIndex)));
     } else if (visibleDate === null) {
       setVisibleDate(startDate);
@@ -233,21 +239,28 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   const handleScroll = useCallback(() => {
     if (scrollContainerRef.current) {
       const scrollLeft = scrollContainerRef.current.scrollLeft;
-      const dayIndex = Math.floor(scrollLeft / DAY_WIDTH);
+      // Account for LEFT_MARGIN and DAY_GAP in the calculation
+      const dayIndex = Math.floor(Math.max(0, scrollLeft - LEFT_MARGIN) / (DAY_WIDTH + DAY_GAP));
       const newVisibleDate = addDays(startDate, Math.max(0, dayIndex));
       setVisibleDate(newVisibleDate);
     }
   }, [startDate]);
 
   // Scroll by a number of days
-  const scrollByDays = useCallback((days: number) => {
+  const scrollByDays = useCallback((numDays: number) => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollBy({
-        left: days * DAY_WIDTH,
+        left: numDays * (DAY_WIDTH + DAY_GAP),
         behavior: 'smooth'
       });
     }
   }, []);
+
+  // Scroll based on current view mode (uses configured scroll amount)
+  const scrollByViewMode = useCallback((direction: 1 | -1) => {
+    const scrollDays = VIEW_MODE_CONFIG[viewMode].scrollDays;
+    scrollByDays(direction * scrollDays);
+  }, [viewMode, scrollByDays]);
 
   // Scroll to a specific month
   const scrollToMonth = useCallback((year: number, month: number) => {
@@ -255,7 +268,7 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
       const targetDate = new Date(year, month, 1);
       const dayOffset = differenceInDays(targetDate, startDate);
       scrollContainerRef.current.scrollTo({
-        left: Math.max(0, dayOffset * DAY_WIDTH),
+        left: Math.max(0, LEFT_MARGIN + dayOffset * (DAY_WIDTH + DAY_GAP)),
         behavior: 'smooth'
       });
     }
@@ -819,19 +832,61 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
           )}
         </div>
         <div className="flex items-center gap-4">
+          {/* View mode dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setIsViewModeDropdownOpen(!isViewModeDropdownOpen);
+                setIsMonthDropdownOpen(false);
+                setIsYearDropdownOpen(false);
+              }}
+              className="flex items-center gap-1 text-sm font-medium text-stone-700 hover:bg-stone-100 px-3 py-1.5 rounded border border-stone-200 transition-colors"
+            >
+              {VIEW_MODE_CONFIG[viewMode].label}
+              <ChevronDown size={14} className={`text-stone-400 transition-transform ${isViewModeDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isViewModeDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setIsViewModeDropdownOpen(false)}
+                />
+                <div className="absolute top-full right-0 mt-1 bg-stone-50 border border-stone-200 rounded-lg shadow-lg z-30 py-1 min-w-[100px]">
+                  {(Object.keys(VIEW_MODE_CONFIG) as ViewMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        setViewMode(mode);
+                        setIsViewModeDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                        viewMode === mode
+                          ? 'bg-accent/10 text-accent font-medium'
+                          : 'text-stone-800 hover:bg-stone-100'
+                      }`}
+                    >
+                      {VIEW_MODE_CONFIG[mode].label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="flex items-center gap-1">
-            <button 
-              onClick={() => scrollByDays(-10)}
+            <button
+              onClick={() => scrollByViewMode(-1)}
               className="p-1 hover:bg-stone-100 rounded transition-colors"
-              title="Go back 10 days"
+              title={`Go back 1 ${viewMode}`}
             >
               <ChevronLeft size={16} className="text-stone-400" />
             </button>
             <span className="text-sm text-stone-800">Today</span>
-            <button 
-              onClick={() => scrollByDays(10)}
+            <button
+              onClick={() => scrollByViewMode(1)}
               className="p-1 hover:bg-stone-100 rounded transition-colors"
-              title="Go forward 10 days"
+              title={`Go forward 1 ${viewMode}`}
             >
               <ChevronRight size={16} className="text-stone-400" />
             </button>
