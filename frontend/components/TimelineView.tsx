@@ -255,9 +255,9 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
 
     const taskRows: Map<string, number> = new Map();
 
-    // Helper: Check if two time ranges overlap
+    // Helper: Check if two time ranges overlap (including when one ends on the same day another starts)
     const timeRangesOverlap = (start1: Date, end1: Date, start2: Date, end2: Date): boolean => {
-      return start1.getTime() < end2.getTime() && end1.getTime() > start2.getTime();
+      return start1.getTime() <= end2.getTime() && end1.getTime() >= start2.getTime();
     };
 
     // Helper: Check if a task can fit in a row (no time overlap with other tasks)

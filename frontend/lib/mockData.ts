@@ -40,7 +40,7 @@ export const tasks: Task[] = [
     duration: 5,
     description: 'Design and architecture phase. Create technical specifications and system design documents.',
     bufferTime: 2,
-    startDate: createDate(7),
+    startDate: createDate(6),
     targetCompletionDate: createDate(11),
     status: 'in-progress',
     projectId: 'project-1',
