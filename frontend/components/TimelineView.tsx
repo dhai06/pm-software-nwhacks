@@ -41,10 +41,10 @@ const AVAILABLE_MONTHS = [
 function TaskNode({ data }: { data: { task: Task; projectId: string; width: number } }) {
   return (
     <div 
-      className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center"
+      className="bg-stone-100 border border-stone-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center"
       style={{ width: data.width, minWidth: 80 }}
     >
-      <span className="text-sm font-medium text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">
+      <span className="text-sm font-medium text-stone-800 whitespace-nowrap overflow-hidden text-ellipsis">
         {data.task.name}
       </span>
     </div>
@@ -67,7 +67,8 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
   
   // State for UI
   const [visibleDate, setVisibleDate] = useState<Date | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
+  const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
   // Get date range for the timeline (January 2026) - use useMemo to ensure stable references
@@ -134,7 +135,8 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         behavior: 'smooth'
       });
     }
-    setIsDropdownOpen(false);
+    setIsMonthDropdownOpen(false);
+    setIsYearDropdownOpen(false);
   }, [startDate]);
 
   // Drag-to-scroll handlers
@@ -230,10 +232,10 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         source: dep.dependsOnTaskId,
         target: dep.taskId,
         type: 'smoothstep',
-        style: { stroke: '#dc7462', strokeWidth: 2 },
+        style: { stroke: '#A8A29E', strokeWidth: 2 },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: '#dc7462',
+          color: '#A8A29E',
         },
       }));
   }, [dependencies, tasks]);
@@ -251,39 +253,84 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
   const todayOffset = differenceInDays(today, startDate);
 
   // Format the visible date for display
-  const displayedMonthYear = visibleDate ? format(visibleDate, 'MMMM yyyy') : format(startDate, 'MMMM yyyy');
+  const displayedMonth = visibleDate ? format(visibleDate, 'MMMM') : format(startDate, 'MMMM');
+  const displayedYear = visibleDate ? format(visibleDate, 'yyyy') : format(startDate, 'yyyy');
+
+  // Available months and years for dropdowns
+  const MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const YEARS = [2025, 2026, 2027];
 
   return (
-    <div className="flex flex-col h-full bg-white px-6 py-6">
-      <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full bg-stone-50 px-6 py-6">
+      <div className="flex flex-col h-full bg-stone-50 rounded-xl border border-stone-200 shadow-sm overflow-hidden">
         {/* Timeline header with date controls */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200">
         <div className="relative flex items-center gap-2">
-          <span className="text-gray-400">&gt;&gt;</span>
+          {/* Month dropdown */}
           <button
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-1 font-medium text-gray-900 hover:bg-gray-100 px-2 py-1 rounded transition-colors"
+            onClick={() => {
+              setIsMonthDropdownOpen(!isMonthDropdownOpen);
+              setIsYearDropdownOpen(false);
+            }}
+            className="flex items-center gap-1 font-medium text-stone-900 hover:bg-stone-100 px-2 py-1 rounded transition-colors"
           >
-            {displayedMonthYear}
-            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+            {displayedMonth}
+            <ChevronDown size={16} className={`text-stone-400 transition-transform ${isMonthDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
           
           {/* Month selector dropdown */}
-          {isDropdownOpen && (
+          {isMonthDropdownOpen && (
             <>
               {/* Backdrop to close dropdown */}
               <div 
                 className="fixed inset-0 z-20" 
-                onClick={() => setIsDropdownOpen(false)}
+                onClick={() => setIsMonthDropdownOpen(false)}
               />
-              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1 min-w-[160px]">
-                {AVAILABLE_MONTHS.map(({ year, month, label }) => (
+              <div className="absolute top-full left-0 mt-1 bg-stone-50 border border-stone-200 rounded-lg shadow-lg z-30 py-1 min-w-[140px]">
+                {MONTHS.map((month, index) => (
                   <button
-                    key={`${year}-${month}`}
-                    onClick={() => scrollToMonth(year, month)}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                    key={month}
+                    onClick={() => scrollToMonth(parseInt(displayedYear), index)}
+                    className="w-full text-left px-4 py-2 text-sm text-stone-800 hover:bg-stone-100 transition-colors"
                   >
-                    {label}
+                    {month}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Year dropdown */}
+          <button
+            onClick={() => {
+              setIsYearDropdownOpen(!isYearDropdownOpen);
+              setIsMonthDropdownOpen(false);
+            }}
+            className="flex items-center gap-1 font-medium text-stone-900 hover:bg-stone-100 px-2 py-1 rounded transition-colors"
+          >
+            {displayedYear}
+            <ChevronDown size={16} className={`text-stone-400 transition-transform ${isYearDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {/* Year selector dropdown */}
+          {isYearDropdownOpen && (
+            <>
+              {/* Backdrop to close dropdown */}
+              <div 
+                className="fixed inset-0 z-20" 
+                onClick={() => setIsYearDropdownOpen(false)}
+              />
+              <div className="absolute top-full left-20 mt-1 bg-stone-50 border border-stone-200 rounded-lg shadow-lg z-30 py-1 min-w-[100px]">
+                {YEARS.map((year) => (
+                  <button
+                    key={year}
+                    onClick={() => scrollToMonth(year, visibleDate ? visibleDate.getMonth() : 0)}
+                    className="w-full text-left px-4 py-2 text-sm text-stone-800 hover:bg-stone-100 transition-colors"
+                  >
+                    {year}
                   </button>
                 ))}
               </div>
@@ -294,18 +341,18 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
           <div className="flex items-center gap-1">
             <button 
               onClick={() => scrollByDays(-10)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              className="p-1 hover:bg-stone-100 rounded transition-colors"
               title="Go back 10 days"
             >
-              <ChevronLeft size={16} className="text-gray-500" />
+              <ChevronLeft size={16} className="text-stone-400" />
             </button>
-            <span className="text-sm text-gray-700">Today</span>
+            <span className="text-sm text-stone-800">Today</span>
             <button 
               onClick={() => scrollByDays(10)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              className="p-1 hover:bg-stone-100 rounded transition-colors"
               title="Go forward 10 days"
             >
-              <ChevronRight size={16} className="text-gray-500" />
+              <ChevronRight size={16} className="text-stone-400" />
             </button>
           </div>
         </div>
@@ -323,7 +370,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       >
         {/* Date header */}
         <div
-          className="sticky top-0 z-10 bg-white border-b border-gray-200 flex"
+          className="sticky top-0 z-10 bg-stone-50 border-b border-stone-200 flex"
           style={{ minWidth: days.length * DAY_WIDTH + LEFT_MARGIN }}
         >
           <div style={{ width: LEFT_MARGIN }} />
@@ -334,11 +381,11 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             return (
               <div
                 key={index}
-                className={`flex-shrink-0 text-center py-2 text-sm ${isWeekend ? 'bg-gray-50' : ''
+                className={`flex-shrink-0 text-center py-2 text-sm ${isWeekend ? 'bg-stone-100' : ''
                   }`}
                 style={{ width: DAY_WIDTH }}
               >
-                <span className={`${isToday ? 'bg-blue-500 text-white rounded-full px-2 py-1' : 'text-gray-500'}`}>
+                <span className={`${isToday ? 'bg-accent text-white rounded-full px-2 py-1' : 'text-stone-400'}`}>
                   {format(day, 'd')}
                 </span>
               </div>
@@ -362,7 +409,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             return (
               <div
                 key={`weekend-${index}`}
-                className="absolute bg-gray-50"
+                className="absolute bg-stone-100"
                 style={{
                   left: LEFT_MARGIN + index * DAY_WIDTH,
                   top: 0,
@@ -375,7 +422,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
 
           {/* Today marker */}
           <div
-            className="absolute bg-red-400"
+            className="absolute bg-accent"
             style={{
               left: LEFT_MARGIN + todayOffset * DAY_WIDTH + DAY_WIDTH / 2 - 1,
               top: 0,
@@ -403,7 +450,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             maxZoom={1}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
           >
-            <Background color="#f3f4f6" gap={DAY_WIDTH} />
+            <Background color="#E6E4DD" gap={DAY_WIDTH} />
           </ReactFlow>
         </div>
       </div>

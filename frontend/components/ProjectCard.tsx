@@ -46,22 +46,22 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <Link href={`/projects/${project.id}`}>
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 h-40 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer flex flex-col">
+      <div className="bg-stone-100 border border-stone-200 rounded-lg p-4 h-40 hover:border-stone-300 hover:shadow-sm transition-all cursor-pointer flex flex-col">
         <div className="flex-1">
           {/* Completion info at top */}
-          <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+          <div className="flex items-center justify-between text-xs text-stone-400 mb-2">
             <span>{completionPercentage}% complete</span>
             <span>{formatDate(completionDate)}</span>
           </div>
           {/* Progress bar */}
-          <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden">
             <div 
               className="h-full bg-emerald-500 rounded-full transition-all duration-300"
               style={{ width: `${completionPercentage}%` }}
             />
           </div>
         </div>
-        <h3 className="text-sm font-medium text-gray-900">{project.name}</h3>
+        <h3 className="text-sm font-medium text-stone-800">{project.name}</h3>
       </div>
     </Link>
   );
@@ -75,9 +75,9 @@ export function NewProjectCard() {
   return (
     <button
       onClick={handleClick}
-      className="bg-gray-50 border border-gray-200 border-dashed rounded-lg p-4 h-40 hover:border-gray-300 hover:bg-gray-100 transition-all cursor-pointer flex items-center justify-center"
+      className="bg-stone-100 border border-stone-200 border-dashed rounded-lg p-4 h-40 hover:border-stone-300 hover:bg-stone-200 transition-all cursor-pointer flex items-center justify-center"
     >
-      <span className="text-sm text-gray-500">+ New page</span>
+      <span className="text-sm text-stone-400">+ New page</span>
     </button>
   );
 }

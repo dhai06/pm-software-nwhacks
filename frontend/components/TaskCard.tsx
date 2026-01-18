@@ -46,9 +46,9 @@ export function TaskCard({ task, projectId }: TaskCardProps) {
     >
       <div 
         onClick={handleClick}
-        className="bg-white border border-gray-200 rounded-lg px-3 py-3 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer"
+        className="bg-white border border-stone-200 rounded-lg px-3 py-3 shadow-sm hover:border-stone-300 hover:shadow-md transition-all cursor-pointer"
       >
-        <span className="text-sm font-medium text-gray-700">{task.name}</span>
+        <span className="text-sm font-medium text-stone-800">{task.name}</span>
       </div>
     </div>
   );

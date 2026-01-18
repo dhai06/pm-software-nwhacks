@@ -92,7 +92,7 @@ export function BoardView({ projectId, tasks }: BoardViewProps) {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-4">
+        <div className="flex gap-6">
           {COLUMNS.map(status => (
             <BoardColumn
               key={status}
@@ -105,8 +105,8 @@ export function BoardView({ projectId, tasks }: BoardViewProps) {
 
         <DragOverlay>
           {activeTask ? (
-            <div className="bg-white border border-gray-300 rounded-lg px-3 py-3 shadow-lg w-[280px]">
-              <span className="text-sm font-medium text-gray-700">
+            <div className="bg-white border border-stone-300 rounded-lg px-3 py-3 shadow-lg w-[280px]">
+              <span className="text-sm font-medium text-stone-800">
                 {activeTask.name}
               </span>
             </div>

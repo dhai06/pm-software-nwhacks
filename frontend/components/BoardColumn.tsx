@@ -24,21 +24,21 @@ export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
   };
 
   return (
-    <div className="flex flex-col min-w-[280px] max-w-[320px]">
+    <div className="flex flex-col min-w-[280px] max-w-[320px] bg-stone-100 rounded-2xl p-4 border border-stone-200">
       {/* Column header */}
       <div className="flex items-center gap-2 mb-3">
         <div className={`w-2 h-2 rounded-full ${statusConfig.dot}`} />
-        <span className={`text-sm font-medium ${statusConfig.text}`}>
+        <span className={`text-sm font-sans font-medium ${statusConfig.text}`}>
           {STATUS_LABELS[status]}
         </span>
-        <span className="text-sm text-gray-400">{tasks.length}</span>
+        <span className="text-sm text-stone-400">{tasks.length}</span>
       </div>
 
       {/* Column content */}
       <div
         ref={setNodeRef}
-        className={`flex-1 flex flex-col gap-2 p-2 rounded-lg transition-colors ${
-          isOver ? 'bg-gray-100' : 'bg-gray-50'
+        className={`flex-1 flex flex-col gap-2 rounded-lg transition-colors ${
+          isOver ? 'bg-stone-200/50' : ''
         }`}
       >
         <SortableContext
@@ -53,7 +53,7 @@ export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
         {/* Add new task button */}
         <button
           onClick={handleNewClick}
-          className="flex items-center gap-1 px-3 py-2 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          className="flex items-center gap-1 px-3 py-2 text-sm text-stone-400 hover:text-stone-800 hover:bg-stone-200 rounded-lg transition-colors"
         >
           <Plus size={14} />
           New Task
