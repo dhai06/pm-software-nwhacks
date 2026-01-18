@@ -2,7 +2,7 @@
 Pydantic schemas for request/response validation
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import date, datetime
 from uuid import UUID
@@ -49,7 +49,8 @@ class TaskOut(TaskBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        orm_mode = True
 
 
 class DependencyCreate(BaseModel):
@@ -65,7 +66,8 @@ class DependencyOut(BaseModel):
     depends_on_task_id: UUID
     created_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        orm_mode = True
 
 
 class TaskWithDependencies(TaskOut):
