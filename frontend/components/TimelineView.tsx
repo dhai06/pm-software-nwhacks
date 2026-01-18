@@ -250,12 +250,14 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     });
 
     // =====================================================
-    // IMPROVED EDGE-AWARE ROW ASSIGNMENT ALGORITHM
+    // EDGE-AWARE ROW ASSIGNMENT ALGORITHM
+    // When an edge conflicts with a task, move that task out of the edge's path
+    // by keeping it in place and pushing all OTHER tasks down
     // =====================================================
 
     const taskRows: Map<string, number> = new Map();
 
-    // Helper: Check if two time ranges overlap (including when one ends on the same day another starts)
+    // Helper: Check if two time ranges overlap
     const timeRangesOverlap = (start1: Date, end1: Date, start2: Date, end2: Date): boolean => {
       return start1.getTime() <= end2.getTime() && end1.getTime() >= start2.getTime();
     };
@@ -273,9 +275,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       return true;
     };
 
-    // Helper: Calculate edge shadow with PRECISE vertical segment position
-    // Smoothstep edges: horizontal → vertical → horizontal
-    // The vertical segment is at the midpoint X between source end and target start
+    // Helper: Calculate edge shadow - which rows and time ranges the edge occupies
     const getEdgeShadow = (dep: TaskDependency) => {
       const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
       const targetTask = tasks.find(t => t.id === dep.taskId);
@@ -294,14 +294,8 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       const edgeEndTime = targetTask.startDate.getTime();
 
       // Calculate the vertical segment position: 1 day before target task starts
-      // This causes edges converging on the same task to merge close to the target
       const ONE_DAY_MS = 24 * 60 * 60 * 1000;
       const verticalSegmentTime = Math.max(edgeStartTime, edgeEndTime - ONE_DAY_MS);
-
-      // The edge occupies:
-      // - Horizontal segment on sourceRow from edgeStartTime to verticalSegmentTime
-      // - Vertical segment at verticalSegmentTime spanning all rows between source and target
-      // - Horizontal segment on targetRow from verticalSegmentTime to edgeEndTime
 
       return {
         sourceRow,
@@ -317,7 +311,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     };
 
     // Helper: Check if a task intersects with an edge
-    // Uses precise vertical segment position for accuracy
+    // Uses inclusive boundaries (<=, >=) to catch edge cases
     const taskIntersectsEdge = (task: Task, edgeShadow: ReturnType<typeof getEdgeShadow>): boolean => {
       if (!edgeShadow) return false;
 
@@ -337,12 +331,12 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         // Task is on source row - check horizontal segment from edge start to vertical
         const segmentStart = edgeShadow.edgeStartTime;
         const segmentEnd = edgeShadow.verticalSegmentTime;
-        return taskStartTime < segmentEnd && taskEndTime > segmentStart;
+        return taskStartTime <= segmentEnd && taskEndTime >= segmentStart;
       } else if (taskRow === edgeShadow.targetRow) {
         // Task is on target row - check horizontal segment from vertical to edge end
         const segmentStart = edgeShadow.verticalSegmentTime;
         const segmentEnd = edgeShadow.edgeEndTime;
-        return taskStartTime < segmentEnd && taskEndTime > segmentStart;
+        return taskStartTime <= segmentEnd && taskEndTime >= segmentStart;
       } else if (taskRow > edgeShadow.minRow && taskRow < edgeShadow.maxRow) {
         // Task is on intermediate row - only the vertical segment passes through
         // Check if task spans the vertical segment's X position
@@ -353,65 +347,10 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       return false;
     };
 
-    // Helper: Check if a task at a given row conflicts with ANY edge
-    const hasEdgeConflictAtRow = (task: Task, row: number): boolean => {
-      const originalRow = taskRows.get(task.id);
-      taskRows.set(task.id, row);
-
-      for (const dep of dependencies) {
-        const shadow = getEdgeShadow(dep);
-        if (shadow && taskIntersectsEdge(task, shadow)) {
-          taskRows.set(task.id, originalRow!);
-          return true;
-        }
-      }
-
-      taskRows.set(task.id, originalRow!);
-      return false;
-    };
-
-    // Helper: Find the best row for a task (minimizes vertical spread)
-    const findBestRow = (task: Task, avoidEdgeShadow: ReturnType<typeof getEdgeShadow>): number => {
-      const maxExistingRow = Math.max(0, ...Array.from(taskRows.values()));
-
-      // Collect candidate rows: try existing rows first, then new rows
-      const candidates: number[] = [];
-
-      // Try rows above the edge first (if edge exists)
-      if (avoidEdgeShadow) {
-        for (let r = avoidEdgeShadow.minRow - 1; r >= 0; r--) {
-          candidates.push(r);
-        }
-      }
-
-      // Try rows below the edge
-      if (avoidEdgeShadow) {
-        for (let r = avoidEdgeShadow.maxRow + 1; r <= maxExistingRow + 5; r++) {
-          candidates.push(r);
-        }
-      } else {
-        // No specific edge to avoid, try all rows
-        for (let r = 0; r <= maxExistingRow + 1; r++) {
-          candidates.push(r);
-        }
-      }
-
-      // Find first valid row (fits time-wise and no edge conflicts)
-      for (const row of candidates) {
-        if (canFitInRow(task, row) && !hasEdgeConflictAtRow(task, row)) {
-          return row;
-        }
-      }
-
-      // Fallback: create new row at the end
-      return maxExistingRow + 1;
-    };
-
     // =====================================================
     // PASS 1: Initial row assignment (time-overlap only)
     // =====================================================
     sortedTasks.forEach(task => {
-      // Find first row where the task fits (no time overlap)
       let assignedRow = 0;
       while (!canFitInRow(task, assignedRow)) {
         assignedRow++;
@@ -420,10 +359,12 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     });
 
     // =====================================================
-    // PASS 2: Iterative edge collision resolution
-    // Full recalculation after each move
+    // PASS 2: Edge collision resolution
+    // When a task conflicts with an edge:
+    // Move ALL other tasks down by 1, EXCEPT the conflicting task
+    // This effectively moves the conflicting task to row 0 (top)
     // =====================================================
-    const MAX_ITERATIONS = 50;
+    const MAX_ITERATIONS = 100;
     let iteration = 0;
     let hasConflicts = true;
 
@@ -431,28 +372,45 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       hasConflicts = false;
       iteration++;
 
-      // Recalculate all edge shadows and check for conflicts
+      // Check each edge for conflicts
       for (const dep of dependencies) {
         const edgeShadow = getEdgeShadow(dep);
         if (!edgeShadow) continue;
 
-        // Find ALL tasks that intersect with this edge
+        // Find any task that intersects with this edge
         for (const task of tasks) {
           if (taskIntersectsEdge(task, edgeShadow)) {
             hasConflicts = true;
 
-            // Find best row using bidirectional search
-            const newRow = findBestRow(task, edgeShadow);
-            taskRows.set(task.id, newRow);
+            // Strategy: Move ALL tasks down by 1, EXCEPT the conflicting task
+            // This effectively moves the conflicting task to the top
+            const conflictingTaskId = task.id;
+            
+            for (const t of tasks) {
+              if (t.id === conflictingTaskId) continue; // Keep conflicting task in place
+              
+              const currentRow = taskRows.get(t.id);
+              if (currentRow !== undefined) {
+                taskRows.set(t.id, currentRow + 1);
+              }
+            }
 
-            // Important: break and restart the entire check
-            // This ensures full recalculation of all edge shadows
+            // Break and restart to recalculate edge shadows with new positions
             break;
           }
         }
 
-        // If we found and fixed a conflict, restart from the beginning
         if (hasConflicts) break;
+      }
+    }
+
+    // =====================================================
+    // PASS 3: Normalize rows (shift everything so minimum row is 0)
+    // =====================================================
+    const minRow = Math.min(...Array.from(taskRows.values()));
+    if (minRow !== 0) {
+      for (const [taskId, row] of taskRows.entries()) {
+        taskRows.set(taskId, row - minRow);
       }
     }
 
