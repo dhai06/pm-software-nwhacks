@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -13,7 +13,7 @@ import {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { Task, TaskDependency } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 
@@ -28,6 +28,14 @@ const DAY_WIDTH = 40;
 const ROW_HEIGHT = 60;
 const HEADER_HEIGHT = 80;
 const LEFT_MARGIN = 20;
+
+// Available months for the dropdown
+const AVAILABLE_MONTHS = [
+  { year: 2025, month: 11, label: 'December 2025' },
+  { year: 2026, month: 0, label: 'January 2026' },
+  { year: 2026, month: 1, label: 'February 2026' },
+  { year: 2026, month: 2, label: 'March 2026' },
+];
 
 // Custom task node component
 function TaskNode({ data }: { data: { task: Task; projectId: string; width: number } }) {
@@ -49,13 +57,25 @@ const nodeTypes = {
 
 export function TimelineView({ projectId, tasks, dependencies }: TimelineViewProps) {
   const router = useRouter();
+  
+  // Refs for drag-to-scroll and initial centering
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftRef = useRef(0);
+  const hasCenteredRef = useRef(false);
+  
+  // State for UI
+  const [visibleDate, setVisibleDate] = useState<Date | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Get date range for the timeline (January 2026) - use useMemo to ensure stable references
-  const { baseDate, startDate, endDate } = useMemo(() => {
-    const base = new Date(2026, 0, 1); // January 1, 2026
+  const { startDate, endDate } = useMemo(() => {
+    const base = new Date(2025, 11, 1); // December 1, 2025 (extended start)
     const start = startOfMonth(base);
-    const end = addDays(endOfMonth(addDays(base, 45)), 7); // Extended to early February
-    return { baseDate: base, startDate: start, endDate: end };
+    const end = addDays(endOfMonth(new Date(2026, 2, 1)), 7); // Extended to early April 2026
+    return { startDate: start, endDate: end };
   }, []);
 
   const days = useMemo(() => {
@@ -63,6 +83,90 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
   }, [startDate, endDate]);
 
   const today = new Date(2026, 0, 17); // Current date as shown in the example
+
+  // Initialize visibleDate and center on "today" after mount
+  useEffect(() => {
+    // Center "today" in the viewport on initial load (only once)
+    if (scrollContainerRef.current && !hasCenteredRef.current) {
+      const todayOffset = differenceInDays(today, startDate);
+      const containerWidth = scrollContainerRef.current.clientWidth;
+      const todayPosition = LEFT_MARGIN + todayOffset * DAY_WIDTH + DAY_WIDTH / 2;
+      const centeredScrollLeft = todayPosition - containerWidth / 2;
+      
+      scrollContainerRef.current.scrollLeft = Math.max(0, centeredScrollLeft);
+      hasCenteredRef.current = true;
+      
+      // Set initial visible date based on centered scroll position
+      const dayIndex = Math.floor(centeredScrollLeft / DAY_WIDTH);
+      setVisibleDate(addDays(startDate, Math.max(0, dayIndex)));
+    } else if (visibleDate === null) {
+      setVisibleDate(startDate);
+    }
+  }, [startDate, visibleDate]);
+
+  // Handle scroll to update visible date
+  const handleScroll = useCallback(() => {
+    if (scrollContainerRef.current) {
+      const scrollLeft = scrollContainerRef.current.scrollLeft;
+      const dayIndex = Math.floor(scrollLeft / DAY_WIDTH);
+      const newVisibleDate = addDays(startDate, Math.max(0, dayIndex));
+      setVisibleDate(newVisibleDate);
+    }
+  }, [startDate]);
+
+  // Scroll by a number of days
+  const scrollByDays = useCallback((days: number) => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({
+        left: days * DAY_WIDTH,
+        behavior: 'smooth'
+      });
+    }
+  }, []);
+
+  // Scroll to a specific month
+  const scrollToMonth = useCallback((year: number, month: number) => {
+    if (scrollContainerRef.current) {
+      const targetDate = new Date(year, month, 1);
+      const dayOffset = differenceInDays(targetDate, startDate);
+      scrollContainerRef.current.scrollTo({
+        left: Math.max(0, dayOffset * DAY_WIDTH),
+        behavior: 'smooth'
+      });
+    }
+    setIsDropdownOpen(false);
+  }, [startDate]);
+
+  // Drag-to-scroll handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!scrollContainerRef.current) return;
+    
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    startXRef.current = e.pageX - scrollContainerRef.current.offsetLeft;
+    scrollLeftRef.current = scrollContainerRef.current.scrollLeft;
+    
+    // Prevent text selection during drag
+    e.preventDefault();
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDraggingRef.current || !scrollContainerRef.current) return;
+    
+    const x = e.pageX - scrollContainerRef.current.offsetLeft;
+    const walk = (startXRef.current - x) * 1.5; // Multiply for faster scroll
+    scrollContainerRef.current.scrollLeft = scrollLeftRef.current + walk;
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  }, []);
 
   // Calculate node positions based on task dates
   const nodes: Node[] = useMemo(() => {
@@ -134,10 +238,6 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       }));
   }, [dependencies, tasks]);
 
-  const handleNewClick = useCallback(() => {
-    alert('Feature coming soon');
-  }, []);
-
   // Handle node clicks - navigate to task page and store current view
   const handleNodeClick: NodeMouseHandler = useCallback((event, node) => {
     // Store that we're coming from timeline view
@@ -150,32 +250,76 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
   // Calculate today marker position
   const todayOffset = differenceInDays(today, startDate);
 
+  // Format the visible date for display
+  const displayedMonthYear = visibleDate ? format(visibleDate, 'MMMM yyyy') : format(startDate, 'MMMM yyyy');
+
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Timeline header with date controls */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-        <div className="flex items-center gap-2">
+        <div className="relative flex items-center gap-2">
           <span className="text-gray-400">&gt;&gt;</span>
-          <span className="font-medium text-gray-900">
-            {format(baseDate, 'MMMM yyyy')}
-          </span>
+          <button
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+            className="flex items-center gap-1 font-medium text-gray-900 hover:bg-gray-100 px-2 py-1 rounded transition-colors"
+          >
+            {displayedMonthYear}
+            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {/* Month selector dropdown */}
+          {isDropdownOpen && (
+            <>
+              {/* Backdrop to close dropdown */}
+              <div 
+                className="fixed inset-0 z-20" 
+                onClick={() => setIsDropdownOpen(false)}
+              />
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1 min-w-[160px]">
+                {AVAILABLE_MONTHS.map(({ year, month, label }) => (
+                  <button
+                    key={`${year}-${month}`}
+                    onClick={() => scrollToMonth(year, month)}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-500">Month</span>
           <div className="flex items-center gap-1">
-            <button className="p-1 hover:bg-gray-100 rounded">
+            <button 
+              onClick={() => scrollByDays(-10)}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              title="Go back 10 days"
+            >
               <ChevronLeft size={16} className="text-gray-500" />
             </button>
             <span className="text-sm text-gray-700">Today</span>
-            <button className="p-1 hover:bg-gray-100 rounded">
+            <button 
+              onClick={() => scrollByDays(10)}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              title="Go forward 10 days"
+            >
               <ChevronRight size={16} className="text-gray-500" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Timeline grid */}
-      <div className="flex-1 relative overflow-auto">
+      {/* Timeline grid with drag-to-scroll */}
+      <div 
+        ref={scrollContainerRef}
+        className={`flex-1 relative overflow-auto ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+        onScroll={handleScroll}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+      >
         {/* Date header */}
         <div
           className="sticky top-0 z-10 bg-white border-b border-gray-200 flex"
@@ -261,16 +405,6 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             <Background color="#f3f4f6" gap={DAY_WIDTH} />
           </ReactFlow>
         </div>
-
-        {/* New task button */}
-        <button
-          onClick={handleNewClick}
-          className="absolute left-4 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors"
-          style={{ top: HEADER_HEIGHT + nodes.length * ROW_HEIGHT + 10 }}
-        >
-          <Plus size={14} />
-          New
-        </button>
       </div>
     </div>
   );
