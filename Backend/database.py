@@ -1,18 +1,38 @@
-import os
+"""
+Database connection and session management
+SQLAlchemy setup for PostgreSQL
+"""
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
+from sqlalchemy. orm import sessionmaker, scoped_session
+from config import DATABASE_URL
 
-load_dotenv()
+# Create engine
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,  # Set to True for SQL debugging
+    future=True,
+    pool_pre_ping=True,  # Verify connections before using
+)
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Session factory
+SessionLocal = scoped_session(
+    sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+        expire_on_commit=False,
+    )
+)
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
 
 def get_db():
+    """
+    Dependency for FastAPI to get DB session
+    Usage: db:  Session = Depends(get_db)
+    """
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close()
+        db. close()
