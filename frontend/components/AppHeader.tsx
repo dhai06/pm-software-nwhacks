@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutGrid, GanttChart, X, Plus, ListTodo } from 'lucide-react';
+import { LayoutGrid, GanttChart, X, Plus, ListTodo, ChevronDown } from 'lucide-react';
 import { TaskStatus, STATUS_LABELS } from '@/lib/types';
 import { AccountMenu } from './AccountMenu';
 import { useProjectStore } from '@/lib/store';
@@ -29,6 +29,39 @@ export function AppHeader() {
   const [taskDuration, setTaskDuration] = useState<string>('7');
   const [taskBufferTime, setTaskBufferTime] = useState<string>('');
   const [taskDependency, setTaskDependency] = useState<string>('');
+  const [dependencySearch, setDependencySearch] = useState('');
+  const [isDependencyDropdownOpen, setIsDependencyDropdownOpen] = useState(false);
+  const dependencyInputRef = useRef<HTMLInputElement>(null);
+  const dependencyDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Filter tasks based on search
+  const filteredTasks = useMemo(() => {
+    if (!dependencySearch.trim()) return allTasks;
+    return allTasks.filter(task => 
+      task.name.toLowerCase().includes(dependencySearch.toLowerCase())
+    );
+  }, [allTasks, dependencySearch]);
+
+  // Get selected task name
+  const selectedTaskName = useMemo(() => {
+    if (!taskDependency) return '';
+    const task = allTasks.find(t => t.id === taskDependency);
+    return task?.name || '';
+  }, [taskDependency, allTasks]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dependencyDropdownRef.current &&
+        !dependencyDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsDependencyDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Parse duration as number, default to 1 if empty or invalid
   const durationValue = parseInt(taskDuration) || 1;
@@ -77,6 +110,7 @@ export function AppHeader() {
       setTaskDuration('7');
       setTaskBufferTime('');
       setTaskDependency('');
+      setDependencySearch('');
       setIsTaskModalOpen(false);
 
       // Navigate to the new task
@@ -94,6 +128,7 @@ export function AppHeader() {
     setTaskDuration('7');
     setTaskBufferTime('');
     setTaskDependency('');
+    setDependencySearch('');
     setIsTaskModalOpen(false);
   };
 
@@ -169,21 +204,21 @@ export function AppHeader() {
 
       {/* Create Task Modal */}
       {isTaskModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-stone-50 rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 sm:p-8">
+          <div className="bg-stone-50 rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 flex-shrink-0">
               <h2 className="text-lg font-semibold text-stone-900">Create New Task</h2>
               <button
                 onClick={handleTaskCancel}
-                className="p-1 hover:bg-stone-200 rounded transition-colors"
+                className="p-1 hover:bg-stone-200 rounded-lg transition-colors"
               >
                 <X size={20} className="text-stone-400" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleTaskSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleTaskSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label htmlFor="task-name" className="block text-sm font-medium text-stone-700 mb-2">
                   Task Name
@@ -276,23 +311,72 @@ export function AppHeader() {
                 </div>
               </div>
 
-              <div>
+              <div ref={dependencyDropdownRef} className="relative">
                 <label htmlFor="task-dependency" className="block text-sm font-medium text-stone-700 mb-2">
                   Depends On (optional)
                 </label>
-                <select
-                  id="task-dependency"
-                  value={taskDependency}
-                  onChange={(e) => setTaskDependency(e.target.value)}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-stone-800"
-                >
-                  <option value="">No dependency</option>
-                  {allTasks.map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    ref={dependencyInputRef}
+                    id="task-dependency"
+                    type="text"
+                    value={isDependencyDropdownOpen ? dependencySearch : selectedTaskName}
+                    onChange={(e) => {
+                      setDependencySearch(e.target.value);
+                      if (!isDependencyDropdownOpen) setIsDependencyDropdownOpen(true);
+                    }}
+                    onFocus={() => {
+                      setIsDependencyDropdownOpen(true);
+                      setDependencySearch('');
+                    }}
+                    placeholder="Search for a task..."
+                    className="w-full px-3 py-2 pr-10 border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-stone-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsDependencyDropdownOpen(!isDependencyDropdownOpen)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                  >
+                    <ChevronDown size={16} className={`transition-transform ${isDependencyDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+                {isDependencyDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTaskDependency('');
+                        setDependencySearch('');
+                        setIsDependencyDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-stone-100 transition-colors ${
+                        !taskDependency ? 'bg-stone-50 text-blue-600 font-medium' : 'text-stone-600'
+                      }`}
+                    >
+                      No dependency
+                    </button>
+                    {filteredTasks.length > 0 ? (
+                      filteredTasks.map((task) => (
+                        <button
+                          key={task.id}
+                          type="button"
+                          onClick={() => {
+                            setTaskDependency(task.id);
+                            setDependencySearch('');
+                            setIsDependencyDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-stone-100 transition-colors ${
+                            taskDependency === task.id ? 'bg-stone-50 text-blue-600 font-medium' : 'text-stone-800'
+                          }`}
+                        >
+                          {task.name}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-stone-400">No tasks found</div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -303,7 +387,7 @@ export function AppHeader() {
                   id="task-status"
                   value={taskStatus}
                   onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-stone-800"
+                  className="w-full px-3 py-2 pr-10 border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-stone-800 appearance-none bg-[url('data:image/svg+xml;charset=UTF-8,%3csvg%20xmlns%3d%22http%3a%2f%2fwww.w3.org%2f2000%2fsvg%22%20width%3d%2216%22%20height%3d%2216%22%20viewBox%3d%220%200%2024%2024%22%20fill%3d%22none%22%20stroke%3d%22%2378716c%22%20stroke-width%3d%222%22%20stroke-linecap%3d%22round%22%20stroke-linejoin%3d%22round%22%3e%3cpolyline%20points%3d%226%209%2012%2015%2018%209%22%3e%3c%2fpolyline%3e%3c%2fsvg%3e')] bg-no-repeat bg-[right_0.75rem_center]"
                 >
                   {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
                     <option key={s} value={s}>

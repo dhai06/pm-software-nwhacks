@@ -82,6 +82,13 @@ export const useProjectStore = create<TaskStore>((set, get) => ({
     const defaultEndDate = new Date(today);
     defaultEndDate.setDate(defaultEndDate.getDate() + 7);
 
+    // Calculate default orderIndex as the end of the list
+    const currentTasks = get().tasks;
+    const maxOrderIndex = currentTasks.reduce((max, task) => {
+      const idx = task.orderIndex ?? -1;
+      return idx > max ? idx : max;
+    }, -1);
+
     const newTaskData = {
       name: taskData.name || 'New Task',
       description: taskData.description || '',
@@ -90,6 +97,7 @@ export const useProjectStore = create<TaskStore>((set, get) => ({
       startDate: taskData.startDate || today,
       targetCompletionDate: taskData.targetCompletionDate || defaultEndDate,
       status: taskData.status || 'not-started' as const,
+      orderIndex: taskData.orderIndex ?? maxOrderIndex + 1,
     };
 
     try {
