@@ -1,8 +1,9 @@
 'use client';
 
-import { format } from 'date-fns';
-import { Calendar, CircleDot, Hash, List, Clock, FileText } from 'lucide-react';
-import { Task, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { format, differenceInDays, addDays } from 'date-fns';
+import { Calendar, CircleDot, Hash, List, Clock, FileText, Save, Check } from 'lucide-react';
+import { Task, TaskStatus, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
 import { useProjectStore } from '@/lib/store';
 
 interface TaskDetailPanelProps {
@@ -11,30 +12,148 @@ interface TaskDetailPanelProps {
 
 export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
   const dependentTask = useProjectStore(state => state.getDependentTask(task.id));
-  const statusConfig = STATUS_COLORS[task.status];
+  const updateTask = useProjectStore(state => state.updateTask);
 
-  const formatDateRange = (start: Date, end: Date) => {
-    return `${format(start, 'MM/dd/yyyy')} → ${format(end, 'MM/dd/yyyy')}`;
+  // Local state for form fields
+  const [name, setName] = useState(task.name);
+  const [description, setDescription] = useState(task.description);
+  const [status, setStatus] = useState<TaskStatus>(task.status);
+  const [startDate, setStartDate] = useState(format(task.startDate, 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(task.targetCompletionDate, 'yyyy-MM-dd'));
+  const [buffer, setBuffer] = useState(task.bufferTime.toString());
+  const [duration, setDuration] = useState(task.duration.toString());
+  const [hasChanges, setHasChanges] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  
+  // Ref to track if duration was manually changed (to prevent useEffect from overwriting)
+  const isManualDurationChange = useRef(false);
+
+  // Sync local state when task prop changes
+  useEffect(() => {
+    setName(task.name);
+    setDescription(task.description);
+    setStatus(task.status);
+    setStartDate(format(task.startDate, 'yyyy-MM-dd'));
+    setEndDate(format(task.targetCompletionDate, 'yyyy-MM-dd'));
+    setBuffer(task.bufferTime.toString());
+    setDuration(task.duration.toString());
+    setHasChanges(false);
+  }, [task]);
+
+  // Calculate duration when dates change (but not when duration was manually changed)
+  useEffect(() => {
+    if (isManualDurationChange.current) {
+      isManualDurationChange.current = false;
+      return;
+    }
+    // Parse as local time to avoid timezone issues
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    if (start && end && !isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      const days = differenceInDays(end, start);
+      if (days >= 0) {
+        setDuration(days.toString());
+      }
+    }
+  }, [startDate, endDate]);
+
+  // Update end date when duration changes manually
+  const handleDurationChange = (newDuration: string) => {
+    setDuration(newDuration);
+    setHasChanges(true);
+    const days = parseInt(newDuration);
+    if (!isNaN(days) && days >= 0) {
+      // Mark as manual change so useEffect doesn't overwrite duration
+      isManualDurationChange.current = true;
+      // Parse as local time to avoid timezone issues
+      const start = new Date(startDate + 'T00:00:00');
+      const newEnd = addDays(start, days);
+      setEndDate(format(newEnd, 'yyyy-MM-dd'));
+    }
   };
+
+  // Mark changes for all field updates
+  const markChanged = useCallback(() => {
+    setHasChanges(true);
+    setSaveStatus('idle');
+  }, []);
+
+  // Save handler
+  const handleSave = useCallback(() => {
+    setSaveStatus('saving');
+
+    // Parse dates as local time (not UTC) by appending time component
+    const parsedStartDate = new Date(startDate + 'T00:00:00');
+    const parsedEndDate = new Date(endDate + 'T00:00:00');
+
+    // Validation: ensure end date is not before start date
+    if (parsedEndDate < parsedStartDate) {
+      alert('End date cannot be before start date');
+      setSaveStatus('idle');
+      return;
+    }
+
+    updateTask(task.id, {
+      name,
+      description,
+      status,
+      startDate: parsedStartDate,
+      targetCompletionDate: parsedEndDate,
+      bufferTime: parseInt(buffer) || 0,
+      duration: parseInt(duration) || 0,
+    });
+
+    setHasChanges(false);
+    setSaveStatus('saved');
+
+    // Reset save status after 2 seconds
+    setTimeout(() => setSaveStatus('idle'), 2000);
+  }, [task.id, name, description, status, startDate, endDate, buffer, duration, updateTask]);
+
+  const statusConfig = STATUS_COLORS[status];
 
   return (
     <div className="max-w-2xl mx-auto p-8">
-      {/* Header */}
+      {/* Header with editable name */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">{task.name}</h1>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => { setName(e.target.value); markChanged(); }}
+          className="text-3xl font-bold text-gray-900 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-1 -mx-1 w-full"
+          placeholder="Task name"
+        />
       </div>
 
       {/* Properties list */}
       <div className="space-y-4">
-        {/* Timeline */}
+        {/* Timeline - Start Date */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 w-32 text-gray-500">
             <Calendar size={16} />
-            <span className="text-sm">Timeline</span>
+            <span className="text-sm">Start Date</span>
           </div>
-          <span className="text-sm text-gray-700">
-            {formatDateRange(task.startDate, task.targetCompletionDate)}
-          </span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => { setStartDate(e.target.value); markChanged(); }}
+            className="text-sm text-gray-700 bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Timeline - End Date */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 w-32 text-gray-500">
+            <Calendar size={16} />
+            <span className="text-sm">End Date</span>
+          </div>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => { setEndDate(e.target.value); markChanged(); }}
+            min={startDate}
+            className="text-sm text-gray-700 bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
 
         {/* Status */}
@@ -43,12 +162,17 @@ export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
             <CircleDot size={16} />
             <span className="text-sm">Status</span>
           </div>
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-sm ${statusConfig.bg} ${statusConfig.text}`}
+          <select
+            value={status}
+            onChange={(e) => { setStatus(e.target.value as TaskStatus); markChanged(); }}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${statusConfig.bg} ${statusConfig.text} border-stone-200`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`} />
-            {STATUS_LABELS[task.status]}
-          </span>
+            {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Buffer */}
@@ -57,19 +181,26 @@ export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
             <Hash size={16} />
             <span className="text-sm">Buffer</span>
           </div>
-          <span className="text-sm text-gray-400">
-            {task.bufferTime > 0 ? `${task.bufferTime} days` : 'Empty'}
-          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={buffer}
+              onChange={(e) => { setBuffer(e.target.value); markChanged(); }}
+              min="0"
+              className="w-20 text-sm text-gray-700 bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-400">days</span>
+          </div>
         </div>
 
-        {/* Depends On */}
+        {/* Depends On (read-only for now) */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 w-32 text-gray-500">
             <List size={16} />
             <span className="text-sm">Depends On</span>
           </div>
-          <span className="text-sm text-gray-400">
-            {dependentTask ? dependentTask.name : 'Empty'}
+          <span className="text-sm text-gray-400 bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5">
+            {dependentTask ? dependentTask.name : 'None'}
           </span>
         </div>
 
@@ -79,19 +210,26 @@ export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
             <Clock size={16} />
             <span className="text-sm">Duration</span>
           </div>
-          <span className="text-sm text-gray-400">
-            {task.duration > 0 ? `${task.duration} days` : 'Empty'}
-          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={duration}
+              onChange={(e) => handleDurationChange(e.target.value)}
+              min="0"
+              className="w-20 text-sm text-gray-700 bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-400">days</span>
+          </div>
         </div>
 
-        {/* Task ID */}
+        {/* Task ID (read-only) */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 w-32 text-gray-500">
             <FileText size={16} />
             <span className="text-sm">Task ID</span>
           </div>
           <span className="text-sm text-gray-400">
-            {task.id.replace('task-', '')}
+            {task.id}
           </span>
         </div>
       </div>
@@ -102,7 +240,40 @@ export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
       {/* Description */}
       <div>
         <h2 className="text-sm font-medium text-gray-500 mb-3">Task Description</h2>
-        <p className="text-sm text-gray-700 leading-relaxed">{task.description}</p>
+        <textarea
+          value={description}
+          onChange={(e) => { setDescription(e.target.value); markChanged(); }}
+          rows={4}
+          className="w-full text-sm text-gray-700 leading-relaxed bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          placeholder="Add a description..."
+        />
+      </div>
+
+      {/* Save Button */}
+      <div className="mt-8 flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={!hasChanges || saveStatus === 'saving'}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            hasChanges
+              ? 'bg-blue-500 text-white hover:bg-blue-600'
+              : saveStatus === 'saved'
+              ? 'bg-green-500 text-white'
+              : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+          }`}
+        >
+          {saveStatus === 'saved' ? (
+            <>
+              <Check size={16} />
+              Saved
+            </>
+          ) : (
+            <>
+              <Save size={16} />
+              {saveStatus === 'saving' ? 'Saving...' : 'Save Changes'}
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

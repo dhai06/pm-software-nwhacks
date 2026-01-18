@@ -10,12 +10,16 @@ import {
   MarkerType,
   NodeMouseHandler,
   Handle,
+  NodeDragHandler,
+  useReactFlow,
+  ReactFlowProvider,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { Task, TaskDependency, STATUS_COLORS } from '@/lib/types';
 import { useRouter } from 'next/navigation';
+import { useProjectStore } from '@/lib/store';
 
 interface TimelineViewProps {
   projectId: string;
@@ -38,24 +42,55 @@ const AVAILABLE_MONTHS = [
   { year: 2026, month: 2, label: 'March 2026' },
 ];
 
-// Custom task node component with status indicator
-function TaskNode({ data }: { data: { task: Task; projectId: string; width: number } }) {
+// Custom task node component with status indicator and resize handles
+function TaskNode({ data }: { data: {
+  task: Task;
+  projectId: string;
+  width: number;
+  onResizeStart?: (taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => void;
+} }) {
   const statusColor = STATUS_COLORS[data.task.status];
+
+  const handleLeftEdgeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    data.onResizeStart?.(data.task.id, 'left', e);
+  };
+
+  const handleRightEdgeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    data.onResizeStart?.(data.task.id, 'right', e);
+  };
 
   return (
     <div
-      className="bg-stone-100 border border-stone-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center gap-2"
-      style={{ width: data.width, minWidth: 80 }}
+      className="bg-stone-100 border border-stone-200 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing flex items-center relative group"
+      style={{ width: data.width, minWidth: 80, height: 36 }}
     >
       <Handle type="target" position={Position.Left} className="opacity-0" />
-      {/* Status indicator dot */}
+
+      {/* Left resize handle */}
       <div
-        className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor.dot}`}
-        title={data.task.status}
+        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-400/30 rounded-l-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        onMouseDown={handleLeftEdgeMouseDown}
       />
-      <span className="text-sm font-medium text-stone-800 whitespace-nowrap overflow-hidden text-ellipsis">
-        {data.task.name}
-      </span>
+
+      {/* Task content */}
+      <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0">
+        <div
+          className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor.dot}`}
+          title={data.task.status}
+        />
+        <span className="text-sm font-medium text-stone-800 whitespace-nowrap overflow-hidden text-ellipsis">
+          {data.task.name}
+        </span>
+      </div>
+
+      {/* Right resize handle */}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-400/30 rounded-r-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        onMouseDown={handleRightEdgeMouseDown}
+      />
+
       <Handle type="source" position={Position.Right} className="opacity-0" />
     </div>
   );
@@ -70,21 +105,40 @@ const nodeTypes = {
 // Accent blue color for edges
 const EDGE_COLOR = '#3B82F6';
 
-export function TimelineView({ projectId, tasks, dependencies }: TimelineViewProps) {
+function TimelineViewInner({ projectId, tasks, dependencies }: TimelineViewProps) {
   const router = useRouter();
-  
+  const updateTask = useProjectStore(state => state.updateTask);
+
   // Refs for drag-to-scroll and initial centering
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isDraggingRef = useRef(false);
+  const isDraggingScrollRef = useRef(false);
   const startXRef = useRef(0);
   const scrollLeftRef = useRef(0);
   const hasCenteredRef = useRef(false);
-  
+
+  // Refs for node dragging
+  const isDraggingNodeRef = useRef(false);
+  const dragStartPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const draggedTaskRef = useRef<Task | null>(null);
+
+  // Refs for edge resizing
+  const isResizingRef = useRef(false);
+  const resizeEdgeRef = useRef<'left' | 'right' | null>(null);
+  const resizeStartXRef = useRef(0);
+  const resizeTaskRef = useRef<Task | null>(null);
+
   // State for UI
   const [visibleDate, setVisibleDate] = useState<Date | null>(null);
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingScroll, setIsDraggingScroll] = useState(false);
+
+  // State for resize preview
+  const [resizePreview, setResizePreview] = useState<{
+    taskId: string;
+    newStartDate?: Date;
+    newEndDate?: Date;
+  } | null>(null);
 
   // Get date range for the timeline (January 2026) - use useMemo to ensure stable references
   const { startDate, endDate } = useMemo(() => {
@@ -156,34 +210,151 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
 
   // Drag-to-scroll handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!scrollContainerRef.current) return;
-    
-    isDraggingRef.current = true;
-    setIsDragging(true);
+    // Don't start scroll drag if we're dragging a node or resizing
+    if (!scrollContainerRef.current || isDraggingNodeRef.current || isResizingRef.current) return;
+
+    isDraggingScrollRef.current = true;
+    setIsDraggingScroll(true);
     startXRef.current = e.pageX - scrollContainerRef.current.offsetLeft;
     scrollLeftRef.current = scrollContainerRef.current.scrollLeft;
-    
+
     // Prevent text selection during drag
     e.preventDefault();
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDraggingRef.current || !scrollContainerRef.current) return;
-    
+    if (!isDraggingScrollRef.current || !scrollContainerRef.current || isDraggingNodeRef.current || isResizingRef.current) return;
+
     const x = e.pageX - scrollContainerRef.current.offsetLeft;
     const walk = (startXRef.current - x) * 1.5; // Multiply for faster scroll
     scrollContainerRef.current.scrollLeft = scrollLeftRef.current + walk;
   }, []);
 
   const handleMouseUp = useCallback(() => {
-    isDraggingRef.current = false;
-    setIsDragging(false);
+    isDraggingScrollRef.current = false;
+    setIsDraggingScroll(false);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    isDraggingRef.current = false;
-    setIsDragging(false);
+    isDraggingScrollRef.current = false;
+    setIsDraggingScroll(false);
   }, []);
+
+  // Edge resize handlers
+  const handleResizeStart = useCallback((taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    isResizingRef.current = true;
+    resizeEdgeRef.current = edge;
+    resizeStartXRef.current = e.clientX;
+    resizeTaskRef.current = task;
+
+    // Prevent text selection
+    e.preventDefault();
+  }, [tasks]);
+
+  // Global mouse move for resize (attached to window)
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current || !resizeTaskRef.current || !resizeEdgeRef.current) return;
+
+      const deltaX = e.clientX - resizeStartXRef.current;
+      const dayOffset = Math.round(deltaX / (DAY_WIDTH + DAY_GAP));
+
+      if (dayOffset === 0) {
+        setResizePreview(null);
+        return;
+      }
+
+      const task = resizeTaskRef.current;
+
+      if (resizeEdgeRef.current === 'left') {
+        const newStartDate = addDays(task.startDate, dayOffset);
+        // Don't allow start date to go past end date
+        if (newStartDate < task.targetCompletionDate) {
+          setResizePreview({ taskId: task.id, newStartDate });
+        }
+      } else {
+        const newEndDate = addDays(task.targetCompletionDate, dayOffset);
+        // Don't allow end date to go before start date
+        if (newEndDate > task.startDate) {
+          setResizePreview({ taskId: task.id, newEndDate });
+        }
+      }
+    };
+
+    const handleGlobalMouseUp = () => {
+      if (isResizingRef.current && resizeTaskRef.current && resizePreview) {
+        const task = resizeTaskRef.current;
+
+        if (resizePreview.newStartDate) {
+          const newDuration = differenceInDays(task.targetCompletionDate, resizePreview.newStartDate);
+          updateTask(task.id, {
+            startDate: resizePreview.newStartDate,
+            duration: newDuration,
+          });
+        } else if (resizePreview.newEndDate) {
+          const newDuration = differenceInDays(resizePreview.newEndDate, task.startDate);
+          updateTask(task.id, {
+            targetCompletionDate: resizePreview.newEndDate,
+            duration: newDuration,
+          });
+        }
+      }
+
+      isResizingRef.current = false;
+      resizeEdgeRef.current = null;
+      resizeTaskRef.current = null;
+      setResizePreview(null);
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [resizePreview, updateTask]);
+
+  // Node drag handlers for updating task dates
+  const handleNodeDragStart: NodeDragHandler = useCallback((event, node) => {
+    isDraggingNodeRef.current = true;
+    dragStartPositionRef.current = { x: node.position.x, y: node.position.y };
+    const task = tasks.find(t => t.id === node.id);
+    draggedTaskRef.current = task || null;
+  }, [tasks]);
+
+  const handleNodeDragStop: NodeDragHandler = useCallback((event, node) => {
+    if (!dragStartPositionRef.current || !draggedTaskRef.current) {
+      isDraggingNodeRef.current = false;
+      return;
+    }
+
+    const task = draggedTaskRef.current;
+    const deltaX = node.position.x - dragStartPositionRef.current.x;
+
+    // Convert pixel distance to days (DAY_WIDTH + DAY_GAP per day)
+    const dayOffset = Math.round(deltaX / (DAY_WIDTH + DAY_GAP));
+
+    if (dayOffset !== 0) {
+      // Calculate new dates
+      const newStartDate = addDays(task.startDate, dayOffset);
+      const newEndDate = addDays(task.targetCompletionDate, dayOffset);
+
+      // Update the task in the store
+      updateTask(task.id, {
+        startDate: newStartDate,
+        targetCompletionDate: newEndDate,
+      });
+    }
+
+    // Reset drag state
+    isDraggingNodeRef.current = false;
+    dragStartPositionRef.current = null;
+    draggedTaskRef.current = null;
+  }, [updateTask]);
 
   // Calculate node positions based on task dates with TWO-PASS dependency-aware layout
   const nodes: Node[] = useMemo(() => {
@@ -415,11 +586,16 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     }
 
     return tasks.map(task => {
-      const dayOffset = differenceInDays(task.startDate, startDate);
+      // Check if this task has a resize preview
+      const preview = resizePreview?.taskId === task.id ? resizePreview : null;
+      const effectiveStartDate = preview?.newStartDate || task.startDate;
+      const effectiveEndDate = preview?.newEndDate || task.targetCompletionDate;
+
+      const dayOffset = differenceInDays(effectiveStartDate, startDate);
       const row = taskRows.get(task.id) || 0;
       // Calculate width based on duration from start to end date (exclusive of end date)
-      const durationDays = differenceInDays(task.targetCompletionDate, task.startDate);
-      const width = durationDays * (DAY_WIDTH + DAY_GAP) - DAY_GAP;
+      const durationDays = differenceInDays(effectiveEndDate, effectiveStartDate);
+      const width = Math.max(durationDays * (DAY_WIDTH + DAY_GAP) - DAY_GAP, 80);
 
       return {
         id: task.id,
@@ -428,12 +604,12 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
           x: LEFT_MARGIN + dayOffset * (DAY_WIDTH + DAY_GAP),
           y: HEADER_HEIGHT + row * ROW_HEIGHT,
         },
-        data: { task, projectId, width },
+        data: { task, projectId, width, onResizeStart: handleResizeStart },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
     });
-  }, [tasks, dependencies, startDate, projectId]);
+  }, [tasks, dependencies, startDate, projectId, resizePreview, handleResizeStart]);
 
   // Create edges for dependencies using smoothstep routing
   const edges: Edge[] = useMemo(() => {
@@ -459,7 +635,11 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
   }, [dependencies, tasks]);
 
   // Handle node clicks - navigate to task page and store current view
+  // Don't navigate if we just finished dragging
   const handleNodeClick: NodeMouseHandler = useCallback((event, node) => {
+    // Prevent navigation right after drag ends
+    if (isDraggingNodeRef.current) return;
+
     // Store that we're coming from timeline view
     if (typeof window !== 'undefined') {
       localStorage.setItem(`project_${projectId}_lastView`, 'timeline');
@@ -577,9 +757,9 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       </div>
 
       {/* Timeline grid with drag-to-scroll */}
-      <div 
+      <div
         ref={scrollContainerRef}
-        className={`flex-1 relative overflow-auto ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+        className={`flex-1 relative overflow-auto ${isDraggingScroll ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
         onScroll={handleScroll}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -682,10 +862,12 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             zoomOnPinch={false}
             zoomOnDoubleClick={false}
             preventScrolling={false}
-            nodesDraggable={false}
+            nodesDraggable={true}
             nodesConnectable={false}
             elementsSelectable={true}
             onNodeClick={handleNodeClick}
+            onNodeDragStart={handleNodeDragStart}
+            onNodeDragStop={handleNodeDragStop}
             minZoom={1}
             maxZoom={1}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
@@ -696,5 +878,14 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       </div>
       </div>
     </div>
+  );
+}
+
+// Wrap with ReactFlowProvider for drag functionality
+export function TimelineView(props: TimelineViewProps) {
+  return (
+    <ReactFlowProvider>
+      <TimelineViewInner {...props} />
+    </ReactFlowProvider>
   );
 }

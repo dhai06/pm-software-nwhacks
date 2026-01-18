@@ -2,7 +2,6 @@
 
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Plus } from 'lucide-react';
 import { Task, TaskStatus, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
 import { TaskCard } from './TaskCard';
 
@@ -19,10 +18,6 @@ export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
 
   const statusConfig = STATUS_COLORS[status];
 
-  const handleNewClick = () => {
-    alert('Feature coming soon');
-  };
-
   return (
     <div className="flex flex-col min-w-[280px] max-w-[320px] bg-stone-100 rounded-2xl p-4 border border-stone-200">
       {/* Column header */}
@@ -37,7 +32,7 @@ export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
       {/* Column content */}
       <div
         ref={setNodeRef}
-        className={`flex-1 flex flex-col gap-2 rounded-lg transition-colors ${
+        className={`flex-1 flex flex-col gap-2 rounded-lg transition-colors min-h-[100px] ${
           isOver ? 'bg-stone-200/50' : ''
         }`}
       >
@@ -49,15 +44,6 @@ export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
             <TaskCard key={task.id} task={task} projectId={projectId} />
           ))}
         </SortableContext>
-
-        {/* Add new task button */}
-        <button
-          onClick={handleNewClick}
-          className="flex items-center gap-1 px-3 py-2 text-sm text-stone-400 hover:text-stone-800 hover:bg-stone-200 rounded-lg transition-colors"
-        >
-          <Plus size={14} />
-          New Task
-        </button>
       </div>
     </div>
   );

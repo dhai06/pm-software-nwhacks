@@ -21,16 +21,20 @@ export const projects: Project[] = [
   },
 ];
 
+// Helper to create end date from start date + duration
+const createEndDate = (startDay: number, duration: number): Date => new Date(2026, 0, startDay + duration);
+
 export const tasks: Task[] = [
   // Project 1 tasks - demonstrates branching dependencies
+  // targetCompletionDate = startDate + duration
   {
     id: 'task-1',
     name: 'Task 1',
     duration: 6,
     description: 'Initial planning and requirements gathering phase. This includes stakeholder interviews and documentation.',
-    bufferTime: 1,
+    bufferTime: 1, // default when not manually entered
     startDate: createDate(1),
-    targetCompletionDate: createDate(6),
+    targetCompletionDate: createEndDate(1, 6), // Jan 1 + 6 = Jan 7
     status: 'done',
     projectId: 'project-1',
   },
@@ -39,9 +43,9 @@ export const tasks: Task[] = [
     name: 'Task 2',
     duration: 5,
     description: 'Design and architecture phase. Create technical specifications and system design documents.',
-    bufferTime: 2,
-    startDate: createDate(6),
-    targetCompletionDate: createDate(11),
+    bufferTime: 1,
+    startDate: createDate(7),
+    targetCompletionDate: createEndDate(7, 5), // Jan 7 + 5 = Jan 12
     status: 'in-progress',
     projectId: 'project-1',
   },
@@ -52,7 +56,7 @@ export const tasks: Task[] = [
     description: 'Backend API development phase.',
     bufferTime: 1,
     startDate: createDate(7),
-    targetCompletionDate: createDate(11),
+    targetCompletionDate: createEndDate(7, 5), // Jan 7 + 5 = Jan 12
     status: 'in-progress',
     projectId: 'project-1',
   },
@@ -61,9 +65,9 @@ export const tasks: Task[] = [
     name: 'Task 4',
     duration: 6,
     description: 'Integration and testing phase.',
-    bufferTime: 2,
+    bufferTime: 1,
     startDate: createDate(16),
-    targetCompletionDate: createDate(20),
+    targetCompletionDate: createEndDate(16, 6), // Jan 16 + 6 = Jan 22
     status: 'not-started',
     projectId: 'project-1',
   },
@@ -74,7 +78,7 @@ export const tasks: Task[] = [
     description: 'Documentation and handoff phase.',
     bufferTime: 1,
     startDate: createDate(12),
-    targetCompletionDate: createDate(15),
+    targetCompletionDate: createEndDate(12, 4), // Jan 12 + 4 = Jan 16
     status: 'not-started',
     projectId: 'project-1',
   },
@@ -85,7 +89,7 @@ export const tasks: Task[] = [
     description: 'Final deployment and launch.',
     bufferTime: 1,
     startDate: createDate(22),
-    targetCompletionDate: createDate(27),
+    targetCompletionDate: createEndDate(22, 6), // Jan 22 + 6 = Jan 28
     status: 'not-started',
     projectId: 'project-1',
   },
@@ -95,9 +99,9 @@ export const tasks: Task[] = [
     name: 'Market Research',
     duration: 5,
     description: 'Conduct market analysis and competitor research for the campaign.',
-    bufferTime: 2,
+    bufferTime: 1,
     startDate: createDate(6),
-    targetCompletionDate: createDate(10),
+    targetCompletionDate: createEndDate(6, 5), // Jan 6 + 5 = Jan 11
     status: 'done',
     projectId: 'project-2',
   },
@@ -106,9 +110,9 @@ export const tasks: Task[] = [
     name: 'Content Creation',
     duration: 10,
     description: 'Create marketing materials, blog posts, and social media content.',
-    bufferTime: 3,
+    bufferTime: 1,
     startDate: createDate(11),
-    targetCompletionDate: createDate(20),
+    targetCompletionDate: createEndDate(11, 10), // Jan 11 + 10 = Jan 21
     status: 'in-progress',
     projectId: 'project-2',
   },
@@ -119,7 +123,7 @@ export const tasks: Task[] = [
     description: 'Execute the marketing campaign across all channels.',
     bufferTime: 1,
     startDate: createDate(21),
-    targetCompletionDate: createDate(23),
+    targetCompletionDate: createEndDate(21, 3), // Jan 21 + 3 = Jan 24
     status: 'not-started',
     projectId: 'project-2',
   },
@@ -130,7 +134,7 @@ export const tasks: Task[] = [
     description: 'Monitor campaign performance and create analytics report.',
     bufferTime: 1,
     startDate: createDate(24),
-    targetCompletionDate: createDate(27),
+    targetCompletionDate: createEndDate(24, 4), // Jan 24 + 4 = Jan 28
     status: 'not-started',
     projectId: 'project-2',
   },
@@ -140,9 +144,9 @@ export const tasks: Task[] = [
     name: 'Design Mockups',
     duration: 7,
     description: 'Create wireframes and high-fidelity mockups for all pages.',
-    bufferTime: 2,
+    bufferTime: 1,
     startDate: createDate(5),
-    targetCompletionDate: createDate(11),
+    targetCompletionDate: createEndDate(5, 7), // Jan 5 + 7 = Jan 12
     status: 'done',
     projectId: 'project-3',
   },
@@ -151,9 +155,9 @@ export const tasks: Task[] = [
     name: 'Frontend Development',
     duration: 14,
     description: 'Build responsive frontend with React and Tailwind CSS.',
-    bufferTime: 3,
+    bufferTime: 1,
     startDate: createDate(12),
-    targetCompletionDate: createDate(25),
+    targetCompletionDate: createEndDate(12, 14), // Jan 12 + 14 = Jan 26
     status: 'in-progress',
     projectId: 'project-3',
   },
@@ -162,9 +166,9 @@ export const tasks: Task[] = [
     name: 'Backend Integration',
     duration: 7,
     description: 'Connect frontend to backend APIs and database.',
-    bufferTime: 2,
-    startDate: createDate(20),
-    targetCompletionDate: createDate(26),
+    bufferTime: 1,
+    startDate: createDate(26),
+    targetCompletionDate: createEndDate(26, 7), // Jan 26 + 7 = Feb 2
     status: 'not-started',
     projectId: 'project-3',
   },
@@ -173,9 +177,9 @@ export const tasks: Task[] = [
     name: 'Testing & QA',
     duration: 5,
     description: 'Comprehensive testing including unit, integration, and E2E tests.',
-    bufferTime: 2,
-    startDate: createDate(27),
-    targetCompletionDate: createDate(31),
+    bufferTime: 1,
+    startDate: createDate(33), // Feb 2
+    targetCompletionDate: createEndDate(33, 5), // Feb 2 + 5 = Feb 7
     status: 'not-started',
     projectId: 'project-3',
   },
@@ -185,8 +189,8 @@ export const tasks: Task[] = [
     duration: 2,
     description: 'Deploy to production environment and configure monitoring.',
     bufferTime: 1,
-    startDate: createDate(32),
-    targetCompletionDate: createDate(33),
+    startDate: createDate(38), // Feb 7
+    targetCompletionDate: createEndDate(38, 2), // Feb 7 + 2 = Feb 9
     status: 'not-started',
     projectId: 'project-3',
   },
