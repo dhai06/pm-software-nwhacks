@@ -40,3 +40,4 @@ claude.MD
 .claude
 
 Backend/venv
+Backend/__pycache__

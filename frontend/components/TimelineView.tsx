@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
+import { useMemo, useCallback, useRef, useState, useEffect, memo } from 'react';
 import {
   ReactFlow,
   Background,
@@ -11,8 +11,8 @@ import {
   NodeMouseHandler,
   Handle,
   NodeDragHandler,
-  useReactFlow,
   ReactFlowProvider,
+  useNodesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
@@ -42,38 +42,59 @@ const AVAILABLE_MONTHS = [
 ];
 
 // Custom task node component with status indicator and resize handles
-function TaskNode({ data }: { data: {
-  task: Task;
-  width: number;
-  onResizeStart?: (taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => void;
-} }) {
+// Memoized to prevent unnecessary re-renders during drag
+const TaskNode = memo(function TaskNode({ data }: { 
+  data: {
+    task: Task;
+    width: number;
+    isInvalid?: boolean;
+    onResizeStart?: (taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => void;
+    onMouseEnter?: () => void;
+    onMouseLeave?: () => void;
+  };
+}) {
   const statusColor = STATUS_COLORS[data.task.status];
 
-  const handleLeftEdgeMouseDown = (e: React.MouseEvent) => {
+  // Conditional styling for invalid tasks
+  const baseClasses = data.isInvalid
+    ? 'bg-red-100 border-2 border-red-400'
+    : 'bg-stone-100 border border-stone-200';
+
+  const handleLeftEdgeMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     data.onResizeStart?.(data.task.id, 'left', e);
-  };
+  }, [data.onResizeStart, data.task.id]);
 
-  const handleRightEdgeMouseDown = (e: React.MouseEvent) => {
+  const handleRightEdgeMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     data.onResizeStart?.(data.task.id, 'right', e);
-  };
+  }, [data.onResizeStart, data.task.id]);
 
   return (
     <div
-      className="bg-stone-100 border border-stone-200 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing flex items-center relative group"
+      className={`${baseClasses} rounded-lg shadow-sm hover:shadow-md active:shadow-2xl active:scale-105 active:z-50 cursor-grab active:cursor-grabbing flex items-center relative group`}
       style={{ width: data.width, minWidth: 80, height: 36 }}
+      onMouseEnter={data.onMouseEnter}
+      onMouseLeave={data.onMouseLeave}
     >
+      {/* Dependency Violation Tooltip */}
+      {data.isInvalid && (
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-red-600 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+          Dependency Violation
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-red-600" />
+        </div>
+      )}
+
       <Handle type="target" position={Position.Left} className="opacity-0" />
 
-      {/* Left resize handle */}
+      {/* Left resize handle - nodrag class prevents React Flow from interpreting as node movement */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-400/30 rounded-l-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="nodrag absolute left-0 top-0 bottom-0 w-[10px] cursor-ew-resize hover:bg-blue-400/30 rounded-l-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
         onMouseDown={handleLeftEdgeMouseDown}
       />
 
-      {/* Task content */}
-      <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0">
+      {/* Task content - Center zone for moving */}
+      <div className="flex items-center gap-2 px-4 py-2 flex-1 min-w-0">
         <div
           className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor.dot}`}
           title={data.task.status}
@@ -83,17 +104,18 @@ function TaskNode({ data }: { data: {
         </span>
       </div>
 
-      {/* Right resize handle */}
+      {/* Right resize handle - nodrag class prevents React Flow from interpreting as node movement */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-400/30 rounded-r-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="nodrag absolute right-0 top-0 bottom-0 w-[10px] cursor-ew-resize hover:bg-blue-400/30 rounded-r-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
         onMouseDown={handleRightEdgeMouseDown}
       />
 
       <Handle type="source" position={Position.Right} className="opacity-0" />
     </div>
   );
-}
+});
 
+// Define nodeTypes outside component to prevent re-registration
 const nodeTypes = {
   taskNode: TaskNode,
 };
@@ -102,6 +124,24 @@ const nodeTypes = {
 
 // Accent blue color for edges
 const EDGE_COLOR = '#3B82F6';
+
+// Helper function to check if a task violates dependency constraints
+function isTaskInvalid(
+  task: Task,
+  allTasks: Task[],
+  allDependencies: TaskDependency[]
+): boolean {
+  // Find all dependencies where this task depends on another
+  const prerequisites = allDependencies.filter(dep => dep.taskId === task.id);
+
+  for (const dep of prerequisites) {
+    const prerequisiteTask = allTasks.find(t => t.id === dep.dependsOnTaskId);
+    if (prerequisiteTask && task.startDate < prerequisiteTask.targetCompletionDate) {
+      return true; // Task starts before prerequisite finishes
+    }
+  }
+  return false;
+}
 
 function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   const router = useRouter();
@@ -114,16 +154,18 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   const scrollLeftRef = useRef(0);
   const hasCenteredRef = useRef(false);
 
-  // Refs for node dragging
+  // Refs for node dragging - use refs instead of state to avoid re-renders during drag
   const isDraggingNodeRef = useRef(false);
   const dragStartPositionRef = useRef<{ x: number; y: number } | null>(null);
   const draggedTaskRef = useRef<Task | null>(null);
+  const draggingNodeIdRef = useRef<string | null>(null);
 
   // Refs for edge resizing
   const isResizingRef = useRef(false);
   const resizeEdgeRef = useRef<'left' | 'right' | null>(null);
   const resizeStartXRef = useRef(0);
   const resizeTaskRef = useRef<Task | null>(null);
+  const justFinishedResizingRef = useRef(false);
 
   // State for UI
   const [visibleDate, setVisibleDate] = useState<Date | null>(null);
@@ -131,12 +173,27 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [isDraggingScroll, setIsDraggingScroll] = useState(false);
 
-  // State for resize preview
+  // State for edge resizing - this is the key state that controls resize behavior
+  const [isEdgeResizing, setIsEdgeResizing] = useState(false);
+
+  // State for resize preview (pixel-based for smooth following)
   const [resizePreview, setResizePreview] = useState<{
     taskId: string;
-    newStartDate?: Date;
-    newEndDate?: Date;
+    edge: 'left' | 'right';
+    deltaX: number; // Raw pixel delta for smooth cursor following
   } | null>(null);
+
+  // Frozen nodes snapshot taken when resize starts - prevents recalculation during drag
+  const frozenNodesRef = useRef<Node[] | null>(null);
+
+  // Use ReactFlow's useNodesState for controlled dragging - declared early for use in handlers
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  
+  // Ref to access current nodes without causing dependency cycles
+  const nodesRef = useRef<Node[]>([]);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   // Get date range for the timeline (January 2026) - use useMemo to ensure stable references
   const { startDate, endDate } = useMemo(() => {
@@ -248,6 +305,11 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
     resizeStartXRef.current = e.clientX;
     resizeTaskRef.current = task;
 
+    // Freeze the current nodes - this prevents recalculation during drag
+    // Use nodesRef to avoid including nodes in dependencies (which would cause infinite loop)
+    frozenNodesRef.current = nodesRef.current;
+    setIsEdgeResizing(true);
+
     // Prevent text selection
     e.preventDefault();
   }, [tasks]);
@@ -258,53 +320,75 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
       if (!isResizingRef.current || !resizeTaskRef.current || !resizeEdgeRef.current) return;
 
       const deltaX = e.clientX - resizeStartXRef.current;
-      const dayOffset = Math.round(deltaX / (DAY_WIDTH + DAY_GAP));
-
-      if (dayOffset === 0) {
-        setResizePreview(null);
-        return;
-      }
-
       const task = resizeTaskRef.current;
+      const edge = resizeEdgeRef.current;
 
-      if (resizeEdgeRef.current === 'left') {
-        const newStartDate = addDays(task.startDate, dayOffset);
-        // Don't allow start date to go past end date
-        if (newStartDate < task.targetCompletionDate) {
-          setResizePreview({ taskId: task.id, newStartDate });
+      // Calculate the minimum width to prevent the task from becoming too small
+      const minWidth = 80;
+      const currentDurationDays = differenceInDays(task.targetCompletionDate, task.startDate);
+      const currentWidth = Math.max(currentDurationDays * (DAY_WIDTH + DAY_GAP) - DAY_GAP, minWidth);
+
+      if (edge === 'left') {
+        // When dragging left edge, the width decreases as we move right
+        const newWidth = currentWidth - deltaX;
+        if (newWidth >= minWidth) {
+          setResizePreview({ taskId: task.id, edge, deltaX });
         }
       } else {
-        const newEndDate = addDays(task.targetCompletionDate, dayOffset);
-        // Don't allow end date to go before start date
-        if (newEndDate > task.startDate) {
-          setResizePreview({ taskId: task.id, newEndDate });
+        // When dragging right edge, the width increases as we move right
+        const newWidth = currentWidth + deltaX;
+        if (newWidth >= minWidth) {
+          setResizePreview({ taskId: task.id, edge, deltaX });
         }
       }
     };
 
     const handleGlobalMouseUp = () => {
-      if (isResizingRef.current && resizeTaskRef.current && resizePreview) {
-        const task = resizeTaskRef.current;
+      if (isResizingRef.current && resizeTaskRef.current) {
+        // Set flag to prevent click from opening the task
+        justFinishedResizingRef.current = true;
+        setTimeout(() => {
+          justFinishedResizingRef.current = false;
+        }, 100);
 
-        if (resizePreview.newStartDate) {
-          const newDuration = differenceInDays(task.targetCompletionDate, resizePreview.newStartDate);
-          updateTask(task.id, {
-            startDate: resizePreview.newStartDate,
-            duration: newDuration,
-          });
-        } else if (resizePreview.newEndDate) {
-          const newDuration = differenceInDays(resizePreview.newEndDate, task.startDate);
-          updateTask(task.id, {
-            targetCompletionDate: resizePreview.newEndDate,
-            duration: newDuration,
-          });
+        // Update task properties based on the final resize preview
+        if (resizePreview) {
+          const task = resizeTaskRef.current;
+          const dayOffset = Math.round(resizePreview.deltaX / (DAY_WIDTH + DAY_GAP));
+
+          if (dayOffset !== 0) {
+            if (resizePreview.edge === 'left') {
+              const newStartDate = addDays(task.startDate, dayOffset);
+              // Don't allow start date to go past end date
+              if (newStartDate < task.targetCompletionDate) {
+                const newDuration = differenceInDays(task.targetCompletionDate, newStartDate);
+                updateTask(task.id, {
+                  startDate: newStartDate,
+                  duration: newDuration,
+                });
+              }
+            } else {
+              const newEndDate = addDays(task.targetCompletionDate, dayOffset);
+              // Don't allow end date to go before start date
+              if (newEndDate > task.startDate) {
+                const newDuration = differenceInDays(newEndDate, task.startDate);
+                updateTask(task.id, {
+                  targetCompletionDate: newEndDate,
+                  duration: newDuration,
+                });
+              }
+            }
+          }
         }
       }
 
+      // Clear all resize state - this triggers the main useEffect to recalculate nodes
       isResizingRef.current = false;
       resizeEdgeRef.current = null;
       resizeTaskRef.current = null;
+      frozenNodesRef.current = null;
       setResizePreview(null);
+      setIsEdgeResizing(false);
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove);
@@ -316,17 +400,21 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
     };
   }, [resizePreview, updateTask]);
 
-  // Node drag handlers for updating task dates
+  // Node drag handlers for updating task dates and order
+  // Use refs only during drag to avoid any state updates/re-renders
   const handleNodeDragStart: NodeDragHandler = useCallback((event, node) => {
     isDraggingNodeRef.current = true;
+    draggingNodeIdRef.current = node.id;
     dragStartPositionRef.current = { x: node.position.x, y: node.position.y };
     const task = tasks.find(t => t.id === node.id);
     draggedTaskRef.current = task || null;
+    // No state updates here - pure ref updates for zero re-renders
   }, [tasks]);
 
   const handleNodeDragStop: NodeDragHandler = useCallback((event, node) => {
     if (!dragStartPositionRef.current || !draggedTaskRef.current) {
       isDraggingNodeRef.current = false;
+      draggingNodeIdRef.current = null;
       return;
     }
 
@@ -336,282 +424,278 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
     // Convert pixel distance to days (DAY_WIDTH + DAY_GAP per day)
     const dayOffset = Math.round(deltaX / (DAY_WIDTH + DAY_GAP));
 
-    if (dayOffset !== 0) {
-      // Calculate new dates
-      const newStartDate = addDays(task.startDate, dayOffset);
-      const newEndDate = addDays(task.targetCompletionDate, dayOffset);
+    // Calculate new orderIndex based on Y position
+    const newOrderIndex = Math.max(0, Math.round((node.position.y - HEADER_HEIGHT) / ROW_HEIGHT));
 
-      // Update the task in the store
-      updateTask(task.id, {
-        startDate: newStartDate,
-        targetCompletionDate: newEndDate,
-      });
-    }
+    // Determine if there are actual changes
+    const hasDateChange = dayOffset !== 0;
+    const hasOrderChange = newOrderIndex !== (task.orderIndex ?? 0);
 
-    // Reset drag state
+    // Reset drag state BEFORE any state updates
     isDraggingNodeRef.current = false;
+    draggingNodeIdRef.current = null;
     dragStartPositionRef.current = null;
     draggedTaskRef.current = null;
-  }, [updateTask]);
 
-  // Calculate node positions based on task dates with TWO-PASS dependency-aware layout
-  const nodes: Node[] = useMemo(() => {
-    // Build dependency graph for topological sorting
-    const dependencyMap = new Map<string, string[]>(); // taskId -> tasks that depend on it
-    const prerequisiteMap = new Map<string, string[]>(); // taskId -> tasks it depends on
+    if (hasDateChange || hasOrderChange) {
+      // Calculate new dates
+      const newStartDate = hasDateChange ? addDays(task.startDate, dayOffset) : task.startDate;
+      const newEndDate = hasDateChange ? addDays(task.targetCompletionDate, dayOffset) : task.targetCompletionDate;
 
-    tasks.forEach(task => {
-      dependencyMap.set(task.id, []);
-      prerequisiteMap.set(task.id, []);
-    });
-
-    dependencies.forEach(dep => {
-      const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
-      const targetTask = tasks.find(t => t.id === dep.taskId);
-      if (sourceTask && targetTask) {
-        dependencyMap.get(dep.dependsOnTaskId)?.push(dep.taskId);
-        prerequisiteMap.get(dep.taskId)?.push(dep.dependsOnTaskId);
+      // Check if new position creates a conflict
+      const updatedTask = { ...task, startDate: newStartDate, targetCompletionDate: newEndDate };
+      if (isTaskInvalid(updatedTask, tasks, dependencies)) {
+        console.warn(`Task "${task.name}" now starts before a prerequisite finishes.`);
       }
-    });
 
-    // Topological sort using Kahn's algorithm
-    const inDegree = new Map<string, number>();
-    tasks.forEach(task => {
-      inDegree.set(task.id, prerequisiteMap.get(task.id)?.length || 0);
-    });
-
-    const queue: Task[] = [];
-    const sortedTasks: Task[] = [];
-
-    // Start with tasks that have no prerequisites
-    tasks.forEach(task => {
-      if (inDegree.get(task.id) === 0) {
-        queue.push(task);
+      // Build update object with only changed fields
+      const updates: Partial<Task> = {};
+      if (hasDateChange) {
+        updates.startDate = newStartDate;
+        updates.targetCompletionDate = newEndDate;
       }
-    });
+      if (hasOrderChange) {
+        updates.orderIndex = newOrderIndex;
+      }
 
-    // Sort initial queue by start date for consistent ordering
-    queue.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+      // Update the task in the store (soft constraint - always allow the drop)
+      updateTask(task.id, updates);
+    }
+  }, [updateTask, tasks, dependencies]);
 
-    while (queue.length > 0) {
-      // Sort queue by start date to prioritize earlier tasks
-      queue.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
-      const task = queue.shift()!;
-      sortedTasks.push(task);
+  // State for hover-based dependency visualization
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
-      // Reduce in-degree for dependent tasks
-      const dependents = dependencyMap.get(task.id) || [];
-      dependents.forEach(depId => {
-        const newDegree = (inDegree.get(depId) || 1) - 1;
-        inDegree.set(depId, newDegree);
-        if (newDegree === 0) {
-          const depTask = tasks.find(t => t.id === depId);
-          if (depTask) queue.push(depTask);
-        }
+  // Create stable hover handlers using refs to avoid recreating on every render
+  const hoverHandlersRef = useRef<Map<string, { enter: () => void; leave: () => void }>>(new Map());
+  
+  const getHoverHandlers = useCallback((taskId: string) => {
+    if (!hoverHandlersRef.current.has(taskId)) {
+      hoverHandlersRef.current.set(taskId, {
+        enter: () => setHoveredTaskId(taskId),
+        leave: () => setHoveredTaskId(null),
       });
     }
+    return hoverHandlersRef.current.get(taskId)!;
+  }, []);
 
-    // Add any remaining tasks (in case of cycles or disconnected tasks)
-    tasks.forEach(task => {
-      if (!sortedTasks.includes(task)) {
-        sortedTasks.push(task);
+  // Topological sort using Kahn's algorithm with cycle detection
+  // Returns tasks sorted so prerequisites appear before dependent tasks
+  const topologicalSort = useCallback((
+    taskList: Task[],
+    deps: TaskDependency[]
+  ): Task[] => {
+    const taskMap = new Map(taskList.map(t => [t.id, t]));
+    const inDegree = new Map<string, number>();
+    const adjacencyList = new Map<string, string[]>();
+
+    // Initialize in-degree and adjacency list for all tasks
+    for (const task of taskList) {
+      inDegree.set(task.id, 0);
+      adjacencyList.set(task.id, []);
+    }
+
+    // Build the graph from dependencies
+    // dep.dependsOnTaskId -> dep.taskId (prerequisite points to dependent)
+    for (const dep of deps) {
+      const source = dep.dependsOnTaskId;
+      const target = dep.taskId;
+
+      // Only process if both tasks exist in our task list
+      if (taskMap.has(source) && taskMap.has(target)) {
+        adjacencyList.get(source)!.push(target);
+        inDegree.set(target, (inDegree.get(target) || 0) + 1);
       }
-    });
+    }
 
-    // =====================================================
-    // EDGE-AWARE ROW ASSIGNMENT ALGORITHM
-    // When an edge conflicts with a task, move that task out of the edge's path
-    // by keeping it in place and pushing all OTHER tasks down
-    // =====================================================
+    // Find all tasks with no prerequisites (in-degree = 0)
+    // Sort by startDate for tie-breaking at each level
+    const queue: Task[] = taskList
+      .filter(t => inDegree.get(t.id) === 0)
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
 
-    const taskRows: Map<string, number> = new Map();
+    const sorted: Task[] = [];
+    let processedCount = 0;
 
-    // Helper: Check if two time ranges overlap
-    const timeRangesOverlap = (start1: Date, end1: Date, start2: Date, end2: Date): boolean => {
-      return start1.getTime() <= end2.getTime() && end1.getTime() >= start2.getTime();
-    };
+    while (queue.length > 0) {
+      // Take the first task (earliest start date among available)
+      const current = queue.shift()!;
+      sorted.push(current);
+      processedCount++;
 
-    // Helper: Check if a task can fit in a row (no time overlap with other tasks)
-    const canFitInRow = (task: Task, row: number): boolean => {
-      for (const other of tasks) {
-        if (other.id === task.id) continue;
-        if (taskRows.get(other.id) !== row) continue;
-        if (timeRangesOverlap(task.startDate, task.targetCompletionDate,
-                              other.startDate, other.targetCompletionDate)) {
-          return false;
-        }
-      }
-      return true;
-    };
+      // Get all dependent tasks and reduce their in-degree
+      const dependents = adjacencyList.get(current.id) || [];
+      const newlyAvailable: Task[] = [];
 
-    // Helper: Calculate edge shadow - which rows and time ranges the edge occupies
-    const getEdgeShadow = (dep: TaskDependency) => {
-      const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
-      const targetTask = tasks.find(t => t.id === dep.taskId);
+      for (const dependentId of dependents) {
+        const newInDegree = (inDegree.get(dependentId) || 0) - 1;
+        inDegree.set(dependentId, newInDegree);
 
-      if (!sourceTask || !targetTask) return null;
-
-      const sourceRow = taskRows.get(sourceTask.id);
-      const targetRow = taskRows.get(targetTask.id);
-
-      if (sourceRow === undefined || targetRow === undefined) return null;
-
-      // Skip edges on same row (no vertical component)
-      if (sourceRow === targetRow) return null;
-
-      const edgeStartTime = sourceTask.targetCompletionDate.getTime();
-      const edgeEndTime = targetTask.startDate.getTime();
-
-      // Calculate the vertical segment position: 1 day before target task starts
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-      const verticalSegmentTime = Math.max(edgeStartTime, edgeEndTime - ONE_DAY_MS);
-
-      return {
-        sourceRow,
-        targetRow,
-        minRow: Math.min(sourceRow, targetRow),
-        maxRow: Math.max(sourceRow, targetRow),
-        edgeStartTime,
-        edgeEndTime,
-        verticalSegmentTime,
-        sourceTaskId: sourceTask.id,
-        targetTaskId: targetTask.id,
-      };
-    };
-
-    // Helper: Check if a task intersects with an edge
-    // Uses inclusive boundaries (<=, >=) to catch edge cases
-    const taskIntersectsEdge = (task: Task, edgeShadow: ReturnType<typeof getEdgeShadow>): boolean => {
-      if (!edgeShadow) return false;
-
-      const taskRow = taskRows.get(task.id);
-      if (taskRow === undefined) return false;
-
-      // Skip if this task is an endpoint of the edge
-      if (task.id === edgeShadow.sourceTaskId || task.id === edgeShadow.targetTaskId) {
-        return false;
-      }
-
-      const taskStartTime = task.startDate.getTime();
-      const taskEndTime = task.targetCompletionDate.getTime();
-
-      // Check based on which part of the edge might intersect
-      if (taskRow === edgeShadow.sourceRow) {
-        // Task is on source row - check horizontal segment from edge start to vertical
-        const segmentStart = edgeShadow.edgeStartTime;
-        const segmentEnd = edgeShadow.verticalSegmentTime;
-        return taskStartTime <= segmentEnd && taskEndTime >= segmentStart;
-      } else if (taskRow === edgeShadow.targetRow) {
-        // Task is on target row - check horizontal segment from vertical to edge end
-        const segmentStart = edgeShadow.verticalSegmentTime;
-        const segmentEnd = edgeShadow.edgeEndTime;
-        return taskStartTime <= segmentEnd && taskEndTime >= segmentStart;
-      } else if (taskRow > edgeShadow.minRow && taskRow < edgeShadow.maxRow) {
-        // Task is on intermediate row - only the vertical segment passes through
-        // Check if task spans the vertical segment's X position
-        return taskStartTime <= edgeShadow.verticalSegmentTime &&
-               taskEndTime >= edgeShadow.verticalSegmentTime;
-      }
-
-      return false;
-    };
-
-    // =====================================================
-    // PASS 1: Initial row assignment (time-overlap only)
-    // =====================================================
-    sortedTasks.forEach(task => {
-      let assignedRow = 0;
-      while (!canFitInRow(task, assignedRow)) {
-        assignedRow++;
-      }
-      taskRows.set(task.id, assignedRow);
-    });
-
-    // =====================================================
-    // PASS 2: Edge collision resolution
-    // When a task conflicts with an edge:
-    // Move ALL other tasks down by 1, EXCEPT the conflicting task
-    // This effectively moves the conflicting task to row 0 (top)
-    // =====================================================
-    const MAX_ITERATIONS = 100;
-    let iteration = 0;
-    let hasConflicts = true;
-
-    while (hasConflicts && iteration < MAX_ITERATIONS) {
-      hasConflicts = false;
-      iteration++;
-
-      // Check each edge for conflicts
-      for (const dep of dependencies) {
-        const edgeShadow = getEdgeShadow(dep);
-        if (!edgeShadow) continue;
-
-        // Find any task that intersects with this edge
-        for (const task of tasks) {
-          if (taskIntersectsEdge(task, edgeShadow)) {
-            hasConflicts = true;
-
-            // Strategy: Move ALL tasks down by 1, EXCEPT the conflicting task
-            // This effectively moves the conflicting task to the top
-            const conflictingTaskId = task.id;
-            
-            for (const t of tasks) {
-              if (t.id === conflictingTaskId) continue; // Keep conflicting task in place
-              
-              const currentRow = taskRows.get(t.id);
-              if (currentRow !== undefined) {
-                taskRows.set(t.id, currentRow + 1);
-              }
-            }
-
-            // Break and restart to recalculate edge shadows with new positions
-            break;
+        // If all prerequisites are processed, this task is now available
+        if (newInDegree === 0) {
+          const dependentTask = taskMap.get(dependentId);
+          if (dependentTask) {
+            newlyAvailable.push(dependentTask);
           }
         }
+      }
 
-        if (hasConflicts) break;
+      // Sort newly available tasks by startDate and merge into queue
+      // This maintains the invariant that queue is sorted by startDate
+      if (newlyAvailable.length > 0) {
+        newlyAvailable.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+
+        // Merge sorted newlyAvailable into sorted queue
+        const merged: Task[] = [];
+        let i = 0, j = 0;
+        while (i < queue.length && j < newlyAvailable.length) {
+          if (queue[i].startDate.getTime() <= newlyAvailable[j].startDate.getTime()) {
+            merged.push(queue[i++]);
+          } else {
+            merged.push(newlyAvailable[j++]);
+          }
+        }
+        while (i < queue.length) merged.push(queue[i++]);
+        while (j < newlyAvailable.length) merged.push(newlyAvailable[j++]);
+
+        queue.length = 0;
+        queue.push(...merged);
       }
     }
 
-    // =====================================================
-    // PASS 3: Normalize rows (shift everything so minimum row is 0)
-    // =====================================================
-    const minRow = Math.min(...Array.from(taskRows.values()));
-    if (minRow !== 0) {
-      for (const [taskId, row] of taskRows.entries()) {
-        taskRows.set(taskId, row - minRow);
-      }
+    // Cycle detection: if we didn't process all tasks, there's a cycle
+    if (processedCount < taskList.length) {
+      console.warn('Circular dependency detected, falling back to startDate sorting');
+      return [...taskList].sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
     }
 
-    return tasks.map(task => {
-      // Check if this task has a resize preview
-      const preview = resizePreview?.taskId === task.id ? resizePreview : null;
-      const effectiveStartDate = preview?.newStartDate || task.startDate;
-      const effectiveEndDate = preview?.newEndDate || task.targetCompletionDate;
+    return sorted;
+  }, []);
 
-      const dayOffset = differenceInDays(effectiveStartDate, startDate);
-      const row = taskRows.get(task.id) || 0;
-      // Calculate width based on duration from start to end date (exclusive of end date)
-      const durationDays = differenceInDays(effectiveEndDate, effectiveStartDate);
-      const width = Math.max(durationDays * (DAY_WIDTH + DAY_GAP) - DAY_GAP, 80);
+  // Helper function to calculate nodes from tasks
+  const calculateNodes = useCallback((
+    taskList: Task[],
+    deps: TaskDependency[],
+    baseStartDate: Date,
+    preview: typeof resizePreview
+  ): Node[] => {
+    // Use topological sort to order tasks so prerequisites appear above dependents
+    const sortedTasks = topologicalSort(taskList, deps);
+
+    return sortedTasks.map((task, rowIndex) => {
+      // Check if this task has a resize preview (pixel-based for smooth following)
+      const taskPreview = preview?.taskId === task.id ? preview : null;
+
+      // Calculate base position and width with validation
+      const baseDayOffset = differenceInDays(task.startDate, baseStartDate);
+      const baseDurationDays = differenceInDays(task.targetCompletionDate, task.startDate);
+
+      // Validate that we have valid numbers (protect against NaN from invalid dates)
+      const validDayOffset = Number.isFinite(baseDayOffset) ? baseDayOffset : 0;
+      const validDurationDays = Number.isFinite(baseDurationDays) && baseDurationDays > 0 ? baseDurationDays : 1;
+
+      let baseX = LEFT_MARGIN + validDayOffset * (DAY_WIDTH + DAY_GAP);
+      let width = Math.max(validDurationDays * (DAY_WIDTH + DAY_GAP) - DAY_GAP, 80);
+
+      // Apply pixel-level adjustments for smooth cursor following during resize
+      if (taskPreview && Number.isFinite(taskPreview.deltaX)) {
+        if (taskPreview.edge === 'left') {
+          // Moving left edge: adjust x position and width
+          baseX += taskPreview.deltaX;
+          width -= taskPreview.deltaX;
+        } else {
+          // Moving right edge: adjust width only
+          width += taskPreview.deltaX;
+        }
+      }
+
+      // Ensure width is always a valid positive number
+      width = Math.max(Number.isFinite(width) ? width : 80, 80);
+
+      // Check if task violates dependency constraints
+      const isInvalid = isTaskInvalid(task, taskList, deps);
+
+      // Get stable hover handlers
+      const hoverHandlers = getHoverHandlers(task.id);
 
       return {
         id: task.id,
         type: 'taskNode',
         position: {
-          x: LEFT_MARGIN + dayOffset * (DAY_WIDTH + DAY_GAP),
-          y: HEADER_HEIGHT + row * ROW_HEIGHT,
+          x: baseX,
+          y: HEADER_HEIGHT + (rowIndex * ROW_HEIGHT),
         },
-        data: { task, width, onResizeStart: handleResizeStart },
+        data: {
+          task,
+          width,
+          isInvalid,
+          onResizeStart: handleResizeStart,
+          onMouseEnter: hoverHandlers.enter,
+          onMouseLeave: hoverHandlers.leave,
+        },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
+        draggable: true,
       };
     });
-  }, [tasks, dependencies, startDate, resizePreview, handleResizeStart]);
+  }, [topologicalSort, handleResizeStart, getHoverHandlers]);
 
-  // Create edges for dependencies using smoothstep routing
+  // Update nodes when tasks, dependencies change (NOT during resize)
+  // This effect handles the base node calculation
+  useEffect(() => {
+    // Skip recalculation during node dragging or edge resizing
+    if (!isDraggingNodeRef.current && !isEdgeResizing) {
+      const calculatedNodes = calculateNodes(tasks, dependencies, startDate, null);
+      setNodes(calculatedNodes);
+    }
+  }, [tasks, dependencies, startDate, calculateNodes, setNodes, isEdgeResizing]);
+
+  // Separate effect for resize preview - updates only the resized node from frozen snapshot
+  useEffect(() => {
+    if (isEdgeResizing && resizePreview && frozenNodesRef.current) {
+      const { taskId, edge, deltaX } = resizePreview;
+
+      // Apply the resize preview only to the specific node being dragged
+      const updatedNodes = frozenNodesRef.current.map(node => {
+        if (node.id !== taskId) return node;
+
+        // Calculate new position and width based on the edge being dragged
+        const currentWidth = node.data.width as number;
+        let newX = node.position.x;
+        let newWidth = currentWidth;
+
+        if (edge === 'left') {
+          // Moving left edge: adjust x position and width
+          newX = node.position.x + deltaX;
+          newWidth = currentWidth - deltaX;
+        } else {
+          // Moving right edge: adjust width only
+          newWidth = currentWidth + deltaX;
+        }
+
+        // Ensure minimum width
+        newWidth = Math.max(newWidth, 80);
+
+        return {
+          ...node,
+          position: { ...node.position, x: newX },
+          data: { ...node.data, width: newWidth },
+        };
+      });
+
+      setNodes(updatedNodes);
+    }
+  }, [isEdgeResizing, resizePreview, setNodes]);
+
+  // Create edges for dependencies - only show when a task is hovered
   const edges: Edge[] = useMemo(() => {
+    if (!hoveredTaskId) return [];
+
     return dependencies
+      .filter(dep => {
+        // Show edges connected to hovered task (incoming or outgoing)
+        return dep.taskId === hoveredTaskId || dep.dependsOnTaskId === hoveredTaskId;
+      })
       .filter(dep => {
         const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
         const targetTask = tasks.find(t => t.id === dep.taskId);
@@ -621,8 +705,9 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
         id: `${dep.dependsOnTaskId}-${dep.taskId}`,
         source: dep.dependsOnTaskId,
         target: dep.taskId,
-        type: 'smoothstep',
-        style: { stroke: EDGE_COLOR, strokeWidth: 2, strokeLinecap: 'round' },
+        type: 'bezier',
+        animated: true,
+        style: { stroke: EDGE_COLOR, strokeWidth: 2 },
         markerEnd: {
           type: MarkerType.Arrow,
           color: EDGE_COLOR,
@@ -630,13 +715,13 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
           height: 20,
         },
       }));
-  }, [dependencies, tasks]);
+  }, [dependencies, tasks, hoveredTaskId]);
 
   // Handle node clicks - navigate to task page and store current view
-  // Don't navigate if we just finished dragging
+  // Don't navigate if we just finished dragging or resizing
   const handleNodeClick: NodeMouseHandler = useCallback((event, node) => {
-    // Prevent navigation right after drag ends
-    if (isDraggingNodeRef.current) return;
+    // Prevent navigation right after drag or resize ends
+    if (isDraggingNodeRef.current || isResizingRef.current || justFinishedResizingRef.current) return;
 
     // Store that we're coming from timeline view
     if (typeof window !== 'undefined') {
@@ -854,6 +939,7 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
             fitView={false}
             panOnDrag={false}
             zoomOnScroll={false}
@@ -862,13 +948,15 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
             preventScrolling={false}
             nodesDraggable={true}
             nodesConnectable={false}
-            elementsSelectable={true}
+            elementsSelectable={false}
+            selectNodesOnDrag={false}
             onNodeClick={handleNodeClick}
             onNodeDragStart={handleNodeDragStart}
             onNodeDragStop={handleNodeDragStop}
             minZoom={1}
             maxZoom={1}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            autoPanOnNodeDrag={false}
           >
             <Background color="#E6E4DD" gap={DAY_WIDTH + DAY_GAP} />
           </ReactFlow>
