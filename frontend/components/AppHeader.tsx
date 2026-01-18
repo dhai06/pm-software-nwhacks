@@ -13,7 +13,7 @@ export function AppHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const isBoard = pathname === '/board';
-  const isTimeline = pathname === '/' || pathname === '/timeline';
+  const isTimeline = pathname === '/dashboard' || pathname === '/timeline';
 
   const createTask = useProjectStore(state => state.createTask);
   const createDependency = useProjectStore(state => state.createDependency);
@@ -168,7 +168,7 @@ export function AppHeader() {
             Board
           </Link>
           <Link
-            href="/"
+            href="/dashboard"
             className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
               isTimeline
                 ? 'bg-stone-100 text-stone-900'
