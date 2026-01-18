@@ -2,6 +2,17 @@ import { Task, TaskDependency, TaskStatus } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// CPM Response from backend
+export interface CPMResponse {
+  ES: Record<string, number>;
+  EF: Record<string, number>;
+  LS: Record<string, number>;
+  LF: Record<string, number>;
+  slack: Record<string, number>;
+  project_end: number;
+  critical_path: string[];
+}
+
 // Backend status values use underscores
 type BackendTaskStatus = 'not_started' | 'in_progress' | 'done';
 
@@ -209,4 +220,12 @@ export async function deleteDependencyApi(dependencyId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to delete dependency: ${response.statusText}`);
   }
+}
+
+export async function fetchCPM(): Promise<CPMResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/cpm`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch CPM data: ${response.statusText}`);
+  }
+  return response.json();
 }

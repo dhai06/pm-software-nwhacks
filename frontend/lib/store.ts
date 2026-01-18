@@ -8,6 +8,7 @@ import {
   deleteTaskApi,
   createDependencyApi,
   deleteDependencyApi,
+  fetchCPM,
 } from './api';
 
 // Type for partial task updates
@@ -17,6 +18,7 @@ interface TaskStore {
   tasks: Task[];
   dependencies: TaskDependency[];
   isLoading: boolean;
+  isSchedulingCPM: boolean;
   error: string | null;
 
   // Data fetching
@@ -32,6 +34,9 @@ interface TaskStore {
   updateTask: (taskId: string, updates: TaskUpdate) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
 
+  // CPM Actions
+  autoScheduleTasks: () => Promise<void>;
+
   // Legacy Actions (keeping for compatibility with existing components)
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
   updateTaskDates: (taskId: string, startDate: Date, targetCompletionDate: Date) => Promise<void>;
@@ -43,6 +48,7 @@ export const useProjectStore = create<TaskStore>((set, get) => ({
   tasks: [],
   dependencies: [],
   isLoading: false,
+  isSchedulingCPM: false,
   error: null,
 
   fetchAllData: async () => {
@@ -137,6 +143,74 @@ export const useProjectStore = create<TaskStore>((set, get) => ({
       }));
     } catch (error) {
       set({ error: (error as Error).message });
+      throw error;
+    }
+  },
+
+  autoScheduleTasks: async () => {
+    const { tasks } = get();
+    if (tasks.length === 0) return;
+
+    set({ isSchedulingCPM: true, error: null });
+
+    try {
+      const cpmResult = await fetchCPM();
+
+      // Calculate project start date: earliest startDate among tasks, or today
+      let projectStartDate = new Date();
+      for (const task of tasks) {
+        if (task.startDate && task.startDate < projectStartDate) {
+          projectStartDate = task.startDate;
+        }
+      }
+
+      // Create a set of critical path task IDs for quick lookup
+      const criticalPathSet = new Set(cpmResult.critical_path);
+
+      // Update tasks with new dates based on CPM results
+      const updatedTasks = tasks.map(task => {
+        const es = cpmResult.ES[task.id];
+        const ef = cpmResult.EF[task.id];
+
+        if (es === undefined || ef === undefined) {
+          // Task not in CPM result, keep original dates
+          return { ...task, isOnCriticalPath: false };
+        }
+
+        // Calculate new dates by adding ES/EF days to project start date
+        const newStartDate = new Date(projectStartDate);
+        newStartDate.setDate(newStartDate.getDate() + es);
+
+        const newEndDate = new Date(projectStartDate);
+        newEndDate.setDate(newEndDate.getDate() + ef);
+
+        return {
+          ...task,
+          startDate: newStartDate,
+          targetCompletionDate: newEndDate,
+          isOnCriticalPath: criticalPathSet.has(task.id),
+        };
+      });
+
+      // Optimistically update local state
+      set({ tasks: updatedTasks, isSchedulingCPM: false });
+
+      // Persist changes to backend
+      for (const task of updatedTasks) {
+        const originalTask = tasks.find(t => t.id === task.id);
+        if (
+          originalTask &&
+          (originalTask.startDate.getTime() !== task.startDate.getTime() ||
+            originalTask.targetCompletionDate.getTime() !== task.targetCompletionDate.getTime())
+        ) {
+          await updateTaskApi(task.id, {
+            startDate: task.startDate,
+            targetCompletionDate: task.targetCompletionDate,
+          });
+        }
+      }
+    } catch (error) {
+      set({ error: (error as Error).message, isSchedulingCPM: false });
       throw error;
     }
   },
