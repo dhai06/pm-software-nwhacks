@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { Task, TaskStatus } from '@/lib/types';
 import { useProjectStore } from '@/lib/store';
 import { BoardColumn } from './BoardColumn';
+import { ProgressTracker } from './ProgressTracker';
 
 interface BoardViewProps {
   tasks: Task[];
@@ -110,32 +111,40 @@ export function BoardView({ tasks }: BoardViewProps) {
 
   return (
     <div className="flex-1 overflow-auto p-6">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={customCollisionDetection}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex gap-6">
-          {COLUMNS.map(status => (
-            <BoardColumn
-              key={status}
-              status={status}
-              tasks={getTasksByStatus(status)}
-            />
-          ))}
-        </div>
+      <div className="flex gap-6">
+        {/* Board columns with drag and drop */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={customCollisionDetection}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex gap-6 flex-1">
+            {COLUMNS.map(status => (
+              <BoardColumn
+                key={status}
+                status={status}
+                tasks={getTasksByStatus(status)}
+              />
+            ))}
+          </div>
 
-        <DragOverlay>
-          {activeTask ? (
-            <div className="bg-white border border-stone-300 rounded-lg px-3 py-3 shadow-lg w-[280px]">
-              <span className="text-sm font-medium text-stone-800">
-                {activeTask.name}
-              </span>
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay>
+            {activeTask ? (
+              <div className="bg-white border border-stone-300 rounded-lg px-3 py-3 shadow-lg w-[280px]">
+                <span className="text-sm font-medium text-stone-800">
+                  {activeTask.name}
+                </span>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+
+        {/* Progress Tracker on the right */}
+        <div className="flex-shrink-0">
+          <ProgressTracker tasks={tasks} />
+        </div>
+      </div>
     </div>
   );
 }
