@@ -1,0 +1,64 @@
+'use client';
+
+import { useDroppable } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { Plus } from 'lucide-react';
+import { Task, TaskStatus, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
+import { TaskCard } from './TaskCard';
+
+interface BoardColumnProps {
+  status: TaskStatus;
+  tasks: Task[];
+  projectId: string;
+}
+
+export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: status,
+  });
+
+  const statusConfig = STATUS_COLORS[status];
+
+  const handleNewClick = () => {
+    alert('Feature coming soon');
+  };
+
+  return (
+    <div className="flex flex-col min-w-[280px] max-w-[320px]">
+      {/* Column header */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className={`w-2 h-2 rounded-full ${statusConfig.dot}`} />
+        <span className={`text-sm font-medium ${statusConfig.text}`}>
+          {STATUS_LABELS[status]}
+        </span>
+        <span className="text-sm text-gray-400">{tasks.length}</span>
+      </div>
+
+      {/* Column content */}
+      <div
+        ref={setNodeRef}
+        className={`flex-1 flex flex-col gap-2 p-2 rounded-lg transition-colors ${
+          isOver ? 'bg-gray-100' : 'bg-gray-50'
+        }`}
+      >
+        <SortableContext
+          items={tasks.map(t => t.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {tasks.map(task => (
+            <TaskCard key={task.id} task={task} projectId={projectId} />
+          ))}
+        </SortableContext>
+
+        {/* Add new task button */}
+        <button
+          onClick={handleNewClick}
+          className="flex items-center gap-1 px-3 py-2 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <Plus size={14} />
+          New Task
+        </button>
+      </div>
+    </div>
+  );
+}
