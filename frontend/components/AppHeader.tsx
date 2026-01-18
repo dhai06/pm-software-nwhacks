@@ -33,6 +33,8 @@ export function AppHeader() {
   const [isDependencyDropdownOpen, setIsDependencyDropdownOpen] = useState(false);
   const dependencyInputRef = useRef<HTMLInputElement>(null);
   const dependencyDropdownRef = useRef<HTMLDivElement>(null);
+  const statusDropdownRef = useRef<HTMLDivElement>(null);
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
 
   // Filter tasks based on search
   const filteredTasks = useMemo(() => {
@@ -49,7 +51,7 @@ export function AppHeader() {
     return task?.name || '';
   }, [taskDependency, allTasks]);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -57,6 +59,12 @@ export function AppHeader() {
         !dependencyDropdownRef.current.contains(event.target as Node)
       ) {
         setIsDependencyDropdownOpen(false);
+      }
+      if (
+        statusDropdownRef.current &&
+        !statusDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsStatusDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -379,22 +387,42 @@ export function AppHeader() {
                 )}
               </div>
 
-              <div>
+              <div ref={statusDropdownRef} className="relative">
                 <label htmlFor="task-status" className="block text-sm font-medium text-stone-700 mb-2">
                   Status
                 </label>
-                <select
-                  id="task-status"
-                  value={taskStatus}
-                  onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
-                  className="w-full px-3 py-2 pr-10 border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-stone-800 appearance-none bg-[url('data:image/svg+xml;charset=UTF-8,%3csvg%20xmlns%3d%22http%3a%2f%2fwww.w3.org%2f2000%2fsvg%22%20width%3d%2216%22%20height%3d%2216%22%20viewBox%3d%220%200%2024%2024%22%20fill%3d%22none%22%20stroke%3d%22%2378716c%22%20stroke-width%3d%222%22%20stroke-linecap%3d%22round%22%20stroke-linejoin%3d%22round%22%3e%3cpolyline%20points%3d%226%209%2012%2015%2018%209%22%3e%3c%2fpolyline%3e%3c%2fsvg%3e')] bg-no-repeat bg-[right_0.75rem_center]"
-                >
-                  {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_LABELS[s]}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <button
+                    type="button"
+                    id="task-status"
+                    onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                    className="w-full px-3 py-2 pr-10 border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-stone-800 text-left"
+                  >
+                    {STATUS_LABELS[taskStatus]}
+                  </button>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none">
+                    <ChevronDown size={16} className={`transition-transform ${isStatusDropdownOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                </div>
+                {isStatusDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          setTaskStatus(s);
+                          setIsStatusDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-stone-100 transition-colors ${
+                          taskStatus === s ? 'bg-stone-50 text-blue-600 font-medium' : 'text-stone-800'
+                        }`}
+                      >
+                        {STATUS_LABELS[s]}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Modal Footer */}
