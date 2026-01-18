@@ -1,140 +1,130 @@
-# Intelligent Critical Path & Scenario Planning
+# Critical Path Project Manager
 
-A hybrid Project Management tool combining **Critical Path Method (CPM)** for execution and **"What-If" Scenario Planning** for risk-free simulation.
+A project management tool with interactive Gantt chart timeline and Kanban board views. Uses the Critical Path Method (CPM) algorithm to calculate optimal task scheduling and identify the critical path through your project.
 
-## 📂 Project Structure
+## What it does
+
+- **Timeline View**: Gantt chart built with React Flow. Drag tasks horizontally to reschedule, drag edges to resize duration, or drag vertically to reorder. Supports day/week/month zoom levels.
+- **Board View**: Kanban board with drag-and-drop between Not Started, In Progress, and Done columns.
+- **CPM Scheduling**: One-click auto-scheduling based on task dependencies. Calculates earliest/latest start times, slack, and highlights which tasks are on the critical path.
+- **Task Dependencies**: Define which tasks depend on others. The timeline shows dependency arrows and warns you if a task starts before its prerequisites finish.
+
+## Project Structure
 
 ```
-/pm-software-nwhacks
-├── /frontend                          # Next.js 14 App (The "Reality" Engine)
-│   ├── /app
-│   │   ├── /dashboard                 # Main application pages
-│   │   │   ├── page.tsx              # Dashboard home (project list)
-│   │   │   └── /project/[id]         # Dynamic project routes
-│   │   │       ├── page.tsx          # Timeline/Board view switcher
-│   │   │       └── layout.tsx        # Project layout wrapper
-│   │   ├── layout.tsx                # Root layout
-│   │   └── page.tsx                  # Landing page
-│   │
-│   ├── /components                    # React components
-│   │   ├── /timeline                 # Gantt Chart components (React Flow)
-│   │   │   ├── TimelineView.tsx      # Main timeline container
-│   │   │   ├── TaskNode.tsx          # Custom node (Gantt bar)
-│   │   │   └── DependencyEdge.tsx    # Custom edge (dependency arrow)
-│   │   ├── /kanban                   # Board components (dnd-kit)
-│   │   │   ├── KanbanView.tsx        # Main board container
-│   │   │   ├── Column.tsx            # Status column
-│   │   │   └── TaskCard.tsx          # Draggable task card
-│   │   └── /ui                       # Shadcn/UI primitives (auto-generated)
-│   │
-│   ├── /lib                          # Core logic
-│   │   ├── /stores                   # Zustand state management
-│   │   │   ├── projectStore.ts       # Tasks, dependencies, validation
-│   │   │   └── uiStore.ts            # View mode, selection state
-│   │   ├── /algorithms               # Client-side graph logic
-│   │   │   └── graphGuard.ts         # DFS cycle detection (Graph Guard)
-│   │   └── supabase.ts               # Supabase client config
-│   │
-│   ├── /types                        # TypeScript definitions
-│   │   └── index.ts                  # Task, Dependency, Graph, Validation types
-│   │
-│   ├── .env.local.example            # Environment variables template
-│   ├── package.json                  # Dependencies
-│   └── tailwind.config.ts            # Tailwind CSS config
-│
-├── /ai-service                       # FastAPI Microservice (The "Pathfinder")
-│   ├── main.py                       # FastAPI entry point
-│   ├── /routers                      # API endpoints
-│   │   ├── plan_generator.py        # /api/generate/plan (RAG-based)
-│   │   └── loop_fixer.py            # /api/fix/loop (AI suggestions)
-│   ├── /core                         # RAG logic
-│   │   └── __init__.py              # Vector search, LLM orchestration
-│   ├── /models                       # Pydantic models
-│   │   └── __init__.py
-│   └── requirements.txt              # Python dependencies
-│
-├── /supabase                         # Database config
-│   ├── /migrations                   # SQL migrations
-│   │   └── 001_initial_schema.sql   # Projects, Tasks, Dependencies tables
-│   └── seed.sql                      # Template data for RAG
-│
-├── PRD.MD                            # Product Requirements Document
-├── Implementation_Plan.MD            # Build guide
-├── claude.MD                         # Tech stack context
-└── README.md                         # This file
+/frontend          Next.js 16 app (React 19)
+/Backend           FastAPI REST API
+/ai-service        Placeholder for future AI features
+/supabase          Database migration files
 ```
 
-## 🛠 Tech Stack
+## Tech Stack
 
-### Frontend
-- **Framework:** Next.js 16 (App Router) + React 19
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS + Shadcn/UI
-- **State:** Zustand
-- **Graph Visualization:** React Flow (@xyflow/react)
-- **Drag & Drop:** dnd-kit
-- **Database Client:** Supabase JS
+**Frontend**
+- Next.js 16 with App Router
+- React 19
+- TypeScript
+- Tailwind CSS
+- Zustand for state management
+- React Flow for the timeline/Gantt chart
+- dnd-kit for Kanban drag-and-drop
+- date-fns for date handling
 
-### Backend
-- **Primary:** Next.js Server Actions + Supabase (PostgreSQL)
-- **AI Microservice:** FastAPI (Python)
-- **Vector Store:** pgvector (Supabase extension)
+**Backend**
+- FastAPI
+- SQLAlchemy ORM
+- PostgreSQL (via Supabase or any Postgres instance)
+- Pydantic for request/response validation
 
-## 📦 Current Status
-
-### ✅ Completed
-- [x] Monorepo structure created
-- [x] Next.js 16 app initialized with TypeScript and React 19
-- [x] Core dependencies installed (zustand, reactflow, dnd-kit, supabase)
-- [x] TypeScript type definitions (Task, Dependency, Graph, Validation)
-- [x] Zustand stores (projectStore, uiStore)
-- [x] Component placeholders (Timeline, Kanban)
-- [x] Page structure (Dashboard, Project detail)
-- [x] Python FastAPI skeleton
-- [x] Database migration placeholders
-
-### 🚧 TODO (Phase 1: Core Mechanics)
-- [ ] Implement Graph Guard (DFS cycle detection in graphGuard.ts)
-- [ ] Build Timeline View with React Flow
-- [ ] Build Kanban Board with dnd-kit
-- [ ] Two-way sync between Timeline and Kanban
-- [ ] Supabase schema implementation
-- [ ] Real-time subscriptions
-
-### 🔮 Future Phases
-- **Phase 2:** AI Integration (RAG, Template Matching)
-- **Phase 3:** Scenario Branching (Deep-copy projects)
-- **Phase 4:** Advanced Features (Critical Path calculation, Subtask tracking)
-
-## 🚀 Getting Started
+## Setup
 
 ### Prerequisites
 - Node.js 18+
 - Python 3.10+
-- Supabase account (or local instance)
+- PostgreSQL database (Supabase works well)
 
-### Frontend Setup
+### Frontend
+
 ```bash
 cd frontend
 npm install
-cp .env.local.example .env.local
-# Edit .env.local with your Supabase credentials
+```
+
+Create a `.env.local` file with your backend URL:
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Run the dev server:
+```bash
 npm run dev
 ```
 
-### AI Service Setup
+The app runs at http://localhost:3000
+
+### Backend
+
 ```bash
-cd ai-service
+cd Backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+venv\Scripts\activate      # Windows
+# source venv/bin/activate  # Mac/Linux
+
 pip install -r requirements.txt
+```
+
+Create a `.env` file:
+```
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
+```
+
+Run the server:
+```bash
 uvicorn main:app --reload
 ```
 
-## 📝 Key Files to Understand
+API runs at http://localhost:8000
 
-1. **[types/index.ts](frontend/types/index.ts)** - Core data structures
-2. **[lib/stores/projectStore.ts](frontend/lib/stores/projectStore.ts)** - State management
-3. **[lib/algorithms/graphGuard.ts](frontend/lib/algorithms/graphGuard.ts)** - Cycle detection (Graph Guard)
-4. **[app/dashboard/project/[id]/page.tsx](frontend/app/dashboard/project/[id]/page.tsx)** - Main project view
+## API Endpoints
 
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/tasks | List all tasks |
+| POST | /api/tasks | Create a task |
+| GET | /api/tasks/{id} | Get a task |
+| PATCH | /api/tasks/{id} | Update a task |
+| DELETE | /api/tasks/{id} | Delete a task |
+| GET | /api/dependencies | List dependencies |
+| POST | /api/dependencies | Create a dependency |
+| DELETE | /api/dependencies/{id} | Remove a dependency |
+| GET | /api/cpm | Calculate critical path |
+
+## CPM Algorithm
+
+The `/api/cpm` endpoint returns:
+
+```json
+{
+  "ES": {"task-id": 0},
+  "EF": {"task-id": 7},
+  "LS": {"task-id": 0},
+  "LF": {"task-id": 7},
+  "slack": {"task-id": 0},
+  "project_end": 14,
+  "critical_path": ["task-id-1", "task-id-3"]
+}
+```
+
+- **ES/EF**: Earliest Start/Finish day
+- **LS/LF**: Latest Start/Finish day (without delaying the project)
+- **slack**: How many days a task can slip without affecting the end date
+- **critical_path**: Tasks with zero slack (must be completed on time)
+
+The frontend uses this to highlight critical path tasks and auto-schedule all tasks based on their dependencies.
+
+## Running Tests
+
+```bash
+cd frontend
+npm test
+```
