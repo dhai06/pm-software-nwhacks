@@ -59,7 +59,9 @@ export function BoardView({ tasks }: BoardViewProps) {
 
   const getTasksByStatus = useCallback(
     (status: TaskStatus) => {
-      return tasks.filter(task => task.status === status);
+      return tasks
+        .filter(task => task.status === status)
+        .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
     },
     [tasks]
   );
