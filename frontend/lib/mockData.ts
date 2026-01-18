@@ -25,7 +25,7 @@ export const tasks: Task[] = [
   // Project 1 tasks - demonstrates branching dependencies
   {
     id: 'task-1',
-    name: 'Task',
+    name: 'Task 1',
     duration: 6,
     description: 'Initial planning and requirements gathering phase. This includes stakeholder interviews and documentation.',
     bufferTime: 1,
@@ -36,7 +36,7 @@ export const tasks: Task[] = [
   },
   {
     id: 'task-2',
-    name: 'Task',
+    name: 'Task 2',
     duration: 5,
     description: 'Design and architecture phase. Create technical specifications and system design documents.',
     bufferTime: 2,
@@ -47,7 +47,7 @@ export const tasks: Task[] = [
   },
   {
     id: 'task-3',
-    name: 'Task',
+    name: 'Task 3',
     duration: 5,
     description: 'Backend API development phase.',
     bufferTime: 1,
@@ -58,18 +58,18 @@ export const tasks: Task[] = [
   },
   {
     id: 'task-4',
-    name: 'Task',
+    name: 'Task 4',
     duration: 6,
     description: 'Integration and testing phase.',
     bufferTime: 2,
-    startDate: createDate(15),
+    startDate: createDate(16),
     targetCompletionDate: createDate(20),
     status: 'not-started',
     projectId: 'project-1',
   },
   {
     id: 'task-5',
-    name: 'Task',
+    name: 'Task 5',
     duration: 4,
     description: 'Documentation and handoff phase.',
     bufferTime: 1,
@@ -80,7 +80,7 @@ export const tasks: Task[] = [
   },
   {
     id: 'task-6',
-    name: 'Task',
+    name: 'Task 6',
     duration: 6,
     description: 'Final deployment and launch.',
     bufferTime: 1,
