@@ -531,17 +531,23 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
           {days.map((day, index) => {
             const isToday = differenceInDays(day, today) === 0;
             const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+            const isSaturday = day.getDay() === 6;
 
             return (
-              <div
-                key={index}
-                className={`flex-shrink-0 text-center py-2 text-sm rounded ${isWeekend ? 'bg-stone-100' : ''
-                  }`}
-                style={{ width: DAY_WIDTH, marginRight: DAY_GAP }}
-              >
-                <span className={`${isToday ? 'bg-accent text-white rounded-full px-2 py-1' : 'text-stone-400'}`}>
-                  {format(day, 'd')}
-                </span>
+              <div key={index} className="flex-shrink-0 flex">
+                <div
+                  className={`text-center py-2 text-sm rounded ${isWeekend ? 'bg-stone-100' : ''}`}
+                  style={{ width: DAY_WIDTH }}
+                >
+                  <span className={`${isToday ? 'bg-accent text-white rounded-full px-2 py-1' : 'text-stone-400'}`}>
+                    {format(day, 'd')}
+                  </span>
+                </div>
+                {/* Gap - filled with grey if Saturday */}
+                <div
+                  className={isSaturday ? 'bg-stone-100' : ''}
+                  style={{ width: DAY_GAP }}
+                />
               </div>
             );
           })}
@@ -560,17 +566,33 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             const isWeekend = day.getDay() === 0 || day.getDay() === 6;
             if (!isWeekend) return null;
 
+            const isSaturday = day.getDay() === 6;
+
             return (
-              <div
-                key={`weekend-${index}`}
-                className="absolute bg-stone-100 rounded"
-                style={{
-                  left: LEFT_MARGIN + index * (DAY_WIDTH + DAY_GAP),
-                  top: 0,
-                  width: DAY_WIDTH,
-                  height: '100%',
-                }}
-              />
+              <div key={`weekend-${index}`}>
+                {/* Weekend day background */}
+                <div
+                  className="absolute bg-stone-100 rounded"
+                  style={{
+                    left: LEFT_MARGIN + index * (DAY_WIDTH + DAY_GAP),
+                    top: 0,
+                    width: DAY_WIDTH,
+                    height: '100%',
+                  }}
+                />
+                {/* Gap filler between Saturday and Sunday */}
+                {isSaturday && (
+                  <div
+                    className="absolute bg-stone-100"
+                    style={{
+                      left: LEFT_MARGIN + index * (DAY_WIDTH + DAY_GAP) + DAY_WIDTH,
+                      top: 0,
+                      width: DAY_GAP,
+                      height: '100%',
+                    }}
+                  />
+                )}
+              </div>
             );
           })}
 
