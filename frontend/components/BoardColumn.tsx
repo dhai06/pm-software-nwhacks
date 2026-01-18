@@ -8,10 +8,9 @@ import { TaskCard } from './TaskCard';
 interface BoardColumnProps {
   status: TaskStatus;
   tasks: Task[];
-  projectId: string;
 }
 
-export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
+export function BoardColumn({ status, tasks }: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: status,
   });
@@ -41,7 +40,7 @@ export function BoardColumn({ status, tasks, projectId }: BoardColumnProps) {
           strategy={verticalListSortingStrategy}
         >
           {tasks.map(task => (
-            <TaskCard key={task.id} task={task} projectId={projectId} />
+            <TaskCard key={task.id} task={task} />
           ))}
         </SortableContext>
       </div>

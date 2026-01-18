@@ -14,8 +14,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Project Management Dashboard",
-  description: "Intelligent Critical Path & Scenario Planning for project management",
+  title: "Task Manager",
+  description: "Intelligent Critical Path & Scenario Planning for task management",
 };
 
 export default function RootLayout({

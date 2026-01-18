@@ -3,11 +3,10 @@
 import { useEffect } from 'react';
 import { useProjectStore } from '@/lib/store';
 import { AppHeader } from '@/components/AppHeader';
-import { TimelineView } from '@/components/TimelineView';
+import { BoardView } from '@/components/BoardView';
 
-export default function HomePage() {
+export default function BoardPage() {
   const tasks = useProjectStore(state => state.tasks);
-  const dependencies = useProjectStore(state => state.dependencies);
   const isLoading = useProjectStore(state => state.isLoading);
   const error = useProjectStore(state => state.error);
   const fetchAllData = useProjectStore(state => state.fetchAllData);
@@ -42,9 +41,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-white flex flex-col">
       <AppHeader />
-      <div className="flex-1">
-        <TimelineView tasks={tasks} dependencies={dependencies} />
-      </div>
+      <BoardView tasks={tasks} />
     </div>
   );
 }

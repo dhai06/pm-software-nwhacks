@@ -7,18 +7,15 @@ export interface Task {
   startDate: Date;
   targetCompletionDate: Date;
   status: 'not-started' | 'in-progress' | 'done';
-  projectId: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface TaskDependency {
+  id?: string;
   taskId: string;
   dependsOnTaskId: string;
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  description: string;
+  createdAt?: Date;
 }
 
 export type TaskStatus = Task['status'];
