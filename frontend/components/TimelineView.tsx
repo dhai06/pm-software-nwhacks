@@ -254,9 +254,10 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
   const displayedMonthYear = visibleDate ? format(visibleDate, 'MMMM yyyy') : format(startDate, 'MMMM yyyy');
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      {/* Timeline header with date controls */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div className="flex flex-col h-full bg-white px-6 py-6">
+      <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Timeline header with date controls */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <div className="relative flex items-center gap-2">
           <span className="text-gray-400">&gt;&gt;</span>
           <button
@@ -405,6 +406,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             <Background color="#f3f4f6" gap={DAY_WIDTH} />
           </ReactFlow>
         </div>
+      </div>
       </div>
     </div>
   );

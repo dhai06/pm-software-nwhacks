@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ChevronDown, LayoutGrid, GanttChart, Home } from 'lucide-react';
 import { Project } from '@/lib/types';
+import { AccountMenu } from './AccountMenu';
 
 interface ProjectHeaderProps {
   project: Project;
@@ -22,14 +23,17 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
     <div className="border-b border-gray-200 bg-white">
       <div className="px-6 py-4">
         {/* Project title */}
-        <div className="flex items-center gap-3 mb-1">
-          <Link
-            href="/"
-            className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-          >
-            <Home className="text-gray-600" size={18} />
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/"
+              className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+            >
+              <Home className="text-gray-600" size={18} />
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+          </div>
+          <AccountMenu />
         </div>
         <p className="text-gray-500 text-sm ml-11">{project.description}</p>
       </div>
