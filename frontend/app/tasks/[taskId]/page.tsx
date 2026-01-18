@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useMemo } from 'react';
+import { use, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
@@ -8,22 +8,24 @@ import { useProjectStore } from '@/lib/store';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 
 interface TaskPageProps {
-  params: Promise<{ id: string; taskId: string }>;
+  params: Promise<{ taskId: string }>;
 }
 
 export default function TaskPage({ params }: TaskPageProps) {
-  const { id, taskId } = use(params);
+  const { taskId } = use(params);
 
-  // Select raw state to avoid creating new objects on each render
-  const projects = useProjectStore(state => state.projects);
   const allTasks = useProjectStore(state => state.tasks);
+  const isLoading = useProjectStore(state => state.isLoading);
+  const fetchAllData = useProjectStore(state => state.fetchAllData);
+
+  // Fetch data on mount if not already loaded
+  useEffect(() => {
+    if (allTasks.length === 0) {
+      fetchAllData();
+    }
+  }, [allTasks.length, fetchAllData]);
 
   // Derive values with useMemo to maintain referential stability
-  const project = useMemo(
-    () => projects.find(p => p.id === id),
-    [projects, id]
-  );
-
   const task = useMemo(
     () => allTasks.find(t => t.id === taskId),
     [allTasks, taskId]
@@ -31,14 +33,20 @@ export default function TaskPage({ params }: TaskPageProps) {
 
   // Get the last view (board or timeline) from localStorage, default to timeline
   const backHref = useMemo(() => {
-    if (typeof window === 'undefined') return `/projects/${id}`;
-    const lastView = localStorage.getItem(`project_${id}_lastView`);
-    return lastView === 'board' 
-      ? `/projects/${id}/board` 
-      : `/projects/${id}`;
-  }, [id]);
+    if (typeof window === 'undefined') return '/';
+    const lastView = localStorage.getItem('lastView');
+    return lastView === 'board' ? '/board' : '/';
+  }, []);
 
-  if (!task || !project) {
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-stone-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!task) {
     notFound();
   }
 
@@ -51,7 +59,7 @@ export default function TaskPage({ params }: TaskPageProps) {
           className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
         >
           <ArrowLeft size={16} />
-          Back to {project.name}
+          Back to Tasks
         </Link>
       </div>
 

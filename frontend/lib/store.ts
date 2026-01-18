@@ -1,58 +1,66 @@
 import { create } from 'zustand';
-import { Project, Task, TaskDependency, TaskStatus } from './types';
-import { projects as initialProjects, tasks as initialTasks, dependencies as initialDependencies } from './mockData';
-
-// Helper to generate unique IDs
-const generateId = (prefix: string): string => {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-};
+import { Task, TaskDependency, TaskStatus } from './types';
+import {
+  fetchTasks,
+  fetchDependencies,
+  createTaskApi,
+  updateTaskApi,
+  deleteTaskApi,
+  createDependencyApi,
+  deleteDependencyApi,
+} from './api';
 
 // Type for partial task updates
-type TaskUpdate = Partial<Omit<Task, 'id' | 'projectId'>>;
+type TaskUpdate = Partial<Omit<Task, 'id'>>;
 
-// Type for partial project updates
-type ProjectUpdate = Partial<Omit<Project, 'id'>>;
-
-interface ProjectStore {
-  projects: Project[];
+interface TaskStore {
   tasks: Task[];
   dependencies: TaskDependency[];
+  isLoading: boolean;
+  error: string | null;
+
+  // Data fetching
+  fetchAllData: () => Promise<void>;
 
   // Getters
-  getProject: (id: string) => Project | undefined;
-  getTasksByProject: (projectId: string) => Task[];
   getTask: (id: string) => Task | undefined;
   getTaskDependencies: (taskId: string) => TaskDependency[];
   getDependentTask: (taskId: string) => Task | undefined;
 
-  // Project Actions
-  createProject: (name: string, description?: string) => string;
-  updateProject: (projectId: string, updates: ProjectUpdate) => void;
-  deleteProject: (projectId: string) => void;
-
   // Task Actions
-  createTask: (projectId: string, taskData: Partial<Omit<Task, 'id' | 'projectId'>>) => string;
-  updateTask: (taskId: string, updates: TaskUpdate) => void;
-  deleteTask: (taskId: string) => void;
+  createTask: (taskData: Partial<Omit<Task, 'id'>>) => Promise<string>;
+  updateTask: (taskId: string, updates: TaskUpdate) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
 
-  // Legacy Actions (keeping for compatibility)
-  updateTaskStatus: (taskId: string, status: TaskStatus) => void;
-  updateTaskDates: (taskId: string, startDate: Date, targetCompletionDate: Date) => void;
-  createDependency: (taskId: string, dependsOnTaskId: string) => void;
-  removeDependency: (taskId: string, dependsOnTaskId: string) => void;
+  // Legacy Actions (keeping for compatibility with existing components)
+  updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
+  updateTaskDates: (taskId: string, startDate: Date, targetCompletionDate: Date) => Promise<void>;
+  createDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
+  removeDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
 }
 
-export const useProjectStore = create<ProjectStore>((set, get) => ({
-  projects: initialProjects,
-  tasks: initialTasks,
-  dependencies: initialDependencies,
+export const useProjectStore = create<TaskStore>((set, get) => ({
+  tasks: [],
+  dependencies: [],
+  isLoading: false,
+  error: null,
 
-  getProject: (id: string) => {
-    return get().projects.find(p => p.id === id);
-  },
-
-  getTasksByProject: (projectId: string) => {
-    return get().tasks.filter(t => t.projectId === projectId);
+  fetchAllData: async () => {
+    console.log('[Store] fetchAllData started');
+    set({ isLoading: true, error: null });
+    try {
+      console.log('[Store] Fetching tasks and dependencies...');
+      const [tasks, dependencies] = await Promise.all([
+        fetchTasks(),
+        fetchDependencies(),
+      ]);
+      console.log('[Store] Fetched successfully:', { tasksCount: tasks.length, depsCount: dependencies.length });
+      set({ tasks, dependencies, isLoading: false });
+      console.log('[Store] State updated, isLoading: false');
+    } catch (error) {
+      console.error('[Store] Error fetching data:', error);
+      set({ error: (error as Error).message, isLoading: false });
+    }
   },
 
   getTask: (id: string) => {
@@ -69,118 +77,103 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return get().tasks.find(t => t.id === dependency.dependsOnTaskId);
   },
 
-  // Project CRUD Actions
-  createProject: (name: string, description: string = '') => {
-    const id = generateId('project');
-    const newProject: Project = {
-      id,
-      name,
-      description,
-    };
-    set(state => ({
-      projects: [...state.projects, newProject],
-    }));
-    return id;
-  },
-
-  updateProject: (projectId: string, updates: ProjectUpdate) => {
-    set(state => ({
-      projects: state.projects.map(project =>
-        project.id === projectId ? { ...project, ...updates } : project
-      ),
-    }));
-  },
-
-  deleteProject: (projectId: string) => {
-    set(state => ({
-      projects: state.projects.filter(p => p.id !== projectId),
-      // Also delete all tasks belonging to this project
-      tasks: state.tasks.filter(t => t.projectId !== projectId),
-      // And their dependencies
-      dependencies: state.dependencies.filter(d => {
-        const taskIds = state.tasks
-          .filter(t => t.projectId === projectId)
-          .map(t => t.id);
-        return !taskIds.includes(d.taskId) && !taskIds.includes(d.dependsOnTaskId);
-      }),
-    }));
-  },
-
-  // Task CRUD Actions
-  createTask: (projectId: string, taskData: Partial<Omit<Task, 'id' | 'projectId'>>) => {
-    const id = generateId('task');
+  createTask: async (taskData: Partial<Omit<Task, 'id'>>) => {
     const today = new Date();
     const defaultEndDate = new Date(today);
     defaultEndDate.setDate(defaultEndDate.getDate() + 7);
 
-    const newTask: Task = {
-      id,
-      projectId,
+    const newTaskData = {
       name: taskData.name || 'New Task',
       description: taskData.description || '',
       duration: taskData.duration || 7,
       bufferTime: taskData.bufferTime || 0,
       startDate: taskData.startDate || today,
       targetCompletionDate: taskData.targetCompletionDate || defaultEndDate,
-      status: taskData.status || 'not-started',
+      status: taskData.status || 'not-started' as const,
     };
-    set(state => ({
-      tasks: [...state.tasks, newTask],
-    }));
-    return id;
+
+    try {
+      const createdTask = await createTaskApi(newTaskData);
+      set(state => ({
+        tasks: [...state.tasks, createdTask],
+      }));
+      return createdTask.id;
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
   },
 
-  updateTask: (taskId: string, updates: TaskUpdate) => {
-    set(state => ({
-      tasks: state.tasks.map(task =>
-        task.id === taskId ? { ...task, ...updates } : task
-      ),
-    }));
+  updateTask: async (taskId: string, updates: TaskUpdate) => {
+    try {
+      const updatedTask = await updateTaskApi(taskId, updates);
+      set(state => ({
+        tasks: state.tasks.map(task =>
+          task.id === taskId ? updatedTask : task
+        ),
+      }));
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
   },
 
-  deleteTask: (taskId: string) => {
-    set(state => ({
-      tasks: state.tasks.filter(t => t.id !== taskId),
-      // Also remove any dependencies involving this task
-      dependencies: state.dependencies.filter(
-        d => d.taskId !== taskId && d.dependsOnTaskId !== taskId
-      ),
-    }));
+  deleteTask: async (taskId: string) => {
+    try {
+      await deleteTaskApi(taskId);
+      set(state => ({
+        tasks: state.tasks.filter(t => t.id !== taskId),
+        dependencies: state.dependencies.filter(
+          d => d.taskId !== taskId && d.dependsOnTaskId !== taskId
+        ),
+      }));
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
   },
 
-  // Legacy Actions (keeping for backward compatibility)
-  updateTaskStatus: (taskId: string, status: TaskStatus) => {
-    set(state => ({
-      tasks: state.tasks.map(task =>
-        task.id === taskId ? { ...task, status } : task
-      ),
-    }));
+  updateTaskStatus: async (taskId: string, status: TaskStatus) => {
+    await get().updateTask(taskId, { status });
   },
 
-  updateTaskDates: (taskId: string, startDate: Date, targetCompletionDate: Date) => {
-    set(state => ({
-      tasks: state.tasks.map(task =>
-        task.id === taskId ? { ...task, startDate, targetCompletionDate } : task
-      ),
-    }));
+  updateTaskDates: async (taskId: string, startDate: Date, targetCompletionDate: Date) => {
+    await get().updateTask(taskId, { startDate, targetCompletionDate });
   },
 
-  createDependency: (taskId: string, dependsOnTaskId: string) => {
+  createDependency: async (taskId: string, dependsOnTaskId: string) => {
     const existing = get().dependencies.find(
       d => d.taskId === taskId && d.dependsOnTaskId === dependsOnTaskId
     );
     if (existing) return;
 
-    set(state => ({
-      dependencies: [...state.dependencies, { taskId, dependsOnTaskId }],
-    }));
+    try {
+      const createdDep = await createDependencyApi(taskId, dependsOnTaskId);
+      set(state => ({
+        dependencies: [...state.dependencies, createdDep],
+      }));
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
   },
 
-  removeDependency: (taskId: string, dependsOnTaskId: string) => {
-    set(state => ({
-      dependencies: state.dependencies.filter(
-        d => !(d.taskId === taskId && d.dependsOnTaskId === dependsOnTaskId)
-      ),
-    }));
+  removeDependency: async (taskId: string, dependsOnTaskId: string) => {
+    const dependency = get().dependencies.find(
+      d => d.taskId === taskId && d.dependsOnTaskId === dependsOnTaskId
+    );
+    if (!dependency || !dependency.id) return;
+
+    try {
+      await deleteDependencyApi(dependency.id);
+      set(state => ({
+        dependencies: state.dependencies.filter(
+          d => !(d.taskId === taskId && d.dependsOnTaskId === dependsOnTaskId)
+        ),
+      }));
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
   },
 }));

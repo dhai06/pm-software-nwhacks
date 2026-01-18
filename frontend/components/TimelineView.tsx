@@ -22,7 +22,6 @@ import { useRouter } from 'next/navigation';
 import { useProjectStore } from '@/lib/store';
 
 interface TimelineViewProps {
-  projectId: string;
   tasks: Task[];
   dependencies: TaskDependency[];
 }
@@ -45,7 +44,6 @@ const AVAILABLE_MONTHS = [
 // Custom task node component with status indicator and resize handles
 function TaskNode({ data }: { data: {
   task: Task;
-  projectId: string;
   width: number;
   onResizeStart?: (taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => void;
 } }) {
@@ -105,7 +103,7 @@ const nodeTypes = {
 // Accent blue color for edges
 const EDGE_COLOR = '#3B82F6';
 
-function TimelineViewInner({ projectId, tasks, dependencies }: TimelineViewProps) {
+function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   const router = useRouter();
   const updateTask = useProjectStore(state => state.updateTask);
 
@@ -604,12 +602,12 @@ function TimelineViewInner({ projectId, tasks, dependencies }: TimelineViewProps
           x: LEFT_MARGIN + dayOffset * (DAY_WIDTH + DAY_GAP),
           y: HEADER_HEIGHT + row * ROW_HEIGHT,
         },
-        data: { task, projectId, width, onResizeStart: handleResizeStart },
+        data: { task, width, onResizeStart: handleResizeStart },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
     });
-  }, [tasks, dependencies, startDate, projectId, resizePreview, handleResizeStart]);
+  }, [tasks, dependencies, startDate, resizePreview, handleResizeStart]);
 
   // Create edges for dependencies using smoothstep routing
   const edges: Edge[] = useMemo(() => {
@@ -642,10 +640,10 @@ function TimelineViewInner({ projectId, tasks, dependencies }: TimelineViewProps
 
     // Store that we're coming from timeline view
     if (typeof window !== 'undefined') {
-      localStorage.setItem(`project_${projectId}_lastView`, 'timeline');
+      localStorage.setItem('lastView', 'timeline');
     }
-    router.push(`/projects/${projectId}/tasks/${node.id}`);
-  }, [projectId, router]);
+    router.push(`/tasks/${node.id}`);
+  }, [router]);
 
   // Calculate today marker position
   const todayOffset = differenceInDays(today, startDate);

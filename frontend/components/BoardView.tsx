@@ -17,13 +17,12 @@ import { useProjectStore } from '@/lib/store';
 import { BoardColumn } from './BoardColumn';
 
 interface BoardViewProps {
-  projectId: string;
   tasks: Task[];
 }
 
 const COLUMNS: TaskStatus[] = ['not-started', 'in-progress', 'done'];
 
-export function BoardView({ projectId, tasks }: BoardViewProps) {
+export function BoardView({ tasks }: BoardViewProps) {
   const updateTaskStatus = useProjectStore(state => state.updateTaskStatus);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
@@ -98,7 +97,6 @@ export function BoardView({ projectId, tasks }: BoardViewProps) {
               key={status}
               status={status}
               tasks={getTasksByStatus(status)}
-              projectId={projectId}
             />
           ))}
         </div>

@@ -8,10 +8,9 @@ import { useRouter } from 'next/navigation';
 
 interface TaskCardProps {
   task: Task;
-  projectId: string;
 }
 
-export function TaskCard({ task, projectId }: TaskCardProps) {
+export function TaskCard({ task }: TaskCardProps) {
   const router = useRouter();
   const {
     attributes,
@@ -31,10 +30,10 @@ export function TaskCard({ task, projectId }: TaskCardProps) {
   const handleClick = useCallback((e: React.MouseEvent) => {
     // Store that we're coming from board view
     if (typeof window !== 'undefined') {
-      localStorage.setItem(`project_${projectId}_lastView`, 'board');
+      localStorage.setItem('lastView', 'board');
     }
-    router.push(`/projects/${projectId}/tasks/${task.id}`);
-  }, [projectId, task.id, router]);
+    router.push(`/tasks/${task.id}`);
+  }, [task.id, router]);
 
   return (
     <div
@@ -44,7 +43,7 @@ export function TaskCard({ task, projectId }: TaskCardProps) {
       {...listeners}
       className="touch-none"
     >
-      <div 
+      <div
         onClick={handleClick}
         className="bg-white border border-stone-200 rounded-lg px-3 py-3 shadow-sm hover:border-stone-300 hover:shadow-md transition-all cursor-pointer"
       >
