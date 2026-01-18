@@ -71,18 +71,22 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       (a, b) => a.startDate.getTime() - b.startDate.getTime()
     );
 
-    // Simple row assignment - avoid overlapping tasks
+    // Row assignment - avoid overlapping tasks (tasks cannot share the same day)
     const rowEndDates: Date[] = [];
     const taskRows: Map<string, number> = new Map();
 
     sortedTasks.forEach(task => {
-      let assignedRow = 0;
+      let assignedRow = -1;
+      // Find the first row where the task can fit (start date must be after end date, not same day)
       for (let i = 0; i < rowEndDates.length; i++) {
-        if (task.startDate >= rowEndDates[i]) {
+        if (task.startDate > rowEndDates[i]) {
           assignedRow = i;
           break;
         }
-        assignedRow = i + 1;
+      }
+      // If no existing row works, create a new row
+      if (assignedRow === -1) {
+        assignedRow = rowEndDates.length;
       }
       taskRows.set(task.id, assignedRow);
       rowEndDates[assignedRow] = task.targetCompletionDate;
