@@ -42,20 +42,28 @@ const AVAILABLE_MONTHS = [
 ];
 
 // Custom task node component with status indicator and resize handles
-function TaskNode({ data }: { data: {
-  task: Task;
-  width: number;
-  isInvalid?: boolean;
-  onResizeStart?: (taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => void;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
-} }) {
+function TaskNode({ data, selected }: {
+  data: {
+    task: Task;
+    width: number;
+    isInvalid?: boolean;
+    onResizeStart?: (taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => void;
+    onMouseEnter?: () => void;
+    onMouseLeave?: () => void;
+  };
+  selected?: boolean;
+}) {
   const statusColor = STATUS_COLORS[data.task.status];
 
   // Conditional styling for invalid tasks
   const baseClasses = data.isInvalid
     ? 'bg-red-100 border border-red-300'
     : 'bg-stone-100 border border-stone-200';
+
+  // Floating effect when selected or being dragged
+  const floatingClasses = selected
+    ? 'z-50 scale-105 shadow-2xl'
+    : 'shadow-sm hover:shadow-md';
 
   const handleLeftEdgeMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -69,20 +77,27 @@ function TaskNode({ data }: { data: {
 
   return (
     <div
-      className={`${baseClasses} rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing flex items-center relative group`}
+      className={`${baseClasses} ${floatingClasses} rounded-lg transition-all cursor-grab active:cursor-grabbing flex items-center relative group`}
       style={{ width: data.width, minWidth: 80, height: 36 }}
       onMouseEnter={data.onMouseEnter}
       onMouseLeave={data.onMouseLeave}
     >
       <Handle type="target" position={Position.Left} className="opacity-0" />
 
-      {/* Left resize handle */}
+      {/* Error tooltip for dependency violation */}
+      {data.isInvalid && (
+        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-red-600 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none z-50">
+          Dependency Violation
+        </div>
+      )}
+
+      {/* Left resize handle - with nodrag class */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-400/30 rounded-l-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="nodrag absolute left-0 top-0 bottom-0 w-[10px] cursor-ew-resize hover:bg-blue-400/30 rounded-l-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
         onMouseDown={handleLeftEdgeMouseDown}
       />
 
-      {/* Task content */}
+      {/* Task content - center area for moving */}
       <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0">
         <div
           className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor.dot}`}
@@ -93,9 +108,9 @@ function TaskNode({ data }: { data: {
         </span>
       </div>
 
-      {/* Right resize handle */}
+      {/* Right resize handle - with nodrag class */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-400/30 rounded-r-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="nodrag absolute right-0 top-0 bottom-0 w-[10px] cursor-ew-resize hover:bg-blue-400/30 rounded-r-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity"
         onMouseDown={handleRightEdgeMouseDown}
       />
 
@@ -360,26 +375,40 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
 
     const task = draggedTaskRef.current;
     const deltaX = node.position.x - dragStartPositionRef.current.x;
+    const deltaY = node.position.y - dragStartPositionRef.current.y;
 
     // Convert pixel distance to days (DAY_WIDTH + DAY_GAP per day)
     const dayOffset = Math.round(deltaX / (DAY_WIDTH + DAY_GAP));
 
+    // Calculate new orderIndex based on Y position
+    const newOrderIndex = Math.round((node.position.y - HEADER_HEIGHT) / ROW_HEIGHT);
+
+    // Prepare updates object
+    const updates: Partial<Task> = {};
+    let hasChanges = false;
+
+    // Update dates if moved horizontally
     if (dayOffset !== 0) {
-      // Calculate new dates
-      const newStartDate = addDays(task.startDate, dayOffset);
-      const newEndDate = addDays(task.targetCompletionDate, dayOffset);
+      updates.startDate = addDays(task.startDate, dayOffset);
+      updates.targetCompletionDate = addDays(task.targetCompletionDate, dayOffset);
+      hasChanges = true;
 
       // Check if new position creates a conflict
-      const updatedTask = { ...task, startDate: newStartDate, targetCompletionDate: newEndDate };
+      const updatedTask = { ...task, ...updates };
       if (isTaskInvalid(updatedTask, tasks, dependencies)) {
         console.warn(`Task "${task.name}" now starts before a prerequisite finishes.`);
       }
+    }
 
-      // Update the task in the store (soft constraint - always allow the drop)
-      updateTask(task.id, {
-        startDate: newStartDate,
-        targetCompletionDate: newEndDate,
-      });
+    // Update orderIndex if moved vertically
+    if (Math.abs(deltaY) > ROW_HEIGHT / 4) { // Only update if moved significantly
+      updates.orderIndex = Math.max(0, newOrderIndex);
+      hasChanges = true;
+    }
+
+    // Apply updates if there are any changes
+    if (hasChanges) {
+      updateTask(task.id, updates);
     }
 
     // Reset drag state
@@ -391,14 +420,25 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   // State for hover-based dependency visualization
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
-  // Calculate node positions with simple waterfall layout (each task gets its own row)
+  // Calculate node positions with orderIndex-based layout
   const nodes: Node[] = useMemo(() => {
-    // Sort tasks by start date ascending
-    const sortedTasks = [...tasks].sort((a, b) =>
-      a.startDate.getTime() - b.startDate.getTime()
-    );
+    // Sort tasks by orderIndex first, then by start date as fallback
+    const sortedTasks = [...tasks].sort((a, b) => {
+      const orderA = a.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      return a.startDate.getTime() - b.startDate.getTime();
+    });
 
-    return sortedTasks.map((task, index) => {
+    // Assign default orderIndex to tasks that don't have one (based on sorted position)
+    const tasksWithOrder = sortedTasks.map((task, index) => ({
+      ...task,
+      effectiveOrderIndex: task.orderIndex ?? index,
+    }));
+
+    return tasksWithOrder.map((task) => {
       // Check if this task has a resize preview
       const preview = resizePreview?.taskId === task.id ? resizePreview : null;
       const effectiveStartDate = preview?.newStartDate || task.startDate;
@@ -417,7 +457,7 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
         type: 'taskNode',
         position: {
           x: LEFT_MARGIN + dayOffset * (DAY_WIDTH + DAY_GAP),
-          y: HEADER_HEIGHT + (index * ROW_HEIGHT), // Simple waterfall: each task gets its own row
+          y: HEADER_HEIGHT + (task.effectiveOrderIndex * ROW_HEIGHT), // Use orderIndex for vertical position
         },
         data: {
           task,

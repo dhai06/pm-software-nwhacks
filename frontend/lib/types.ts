@@ -7,6 +7,7 @@ export interface Task {
   startDate: Date;
   targetCompletionDate: Date;
   status: 'not-started' | 'in-progress' | 'done';
+  orderIndex?: number; // vertical position in timeline
   createdAt?: Date;
   updatedAt?: Date;
 }
