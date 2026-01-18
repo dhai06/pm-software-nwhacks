@@ -31,11 +31,11 @@ export default function TaskPage({ params }: TaskPageProps) {
     [allTasks, taskId]
   );
 
-  // Get the last view (board or timeline) from localStorage, default to timeline
+  // Get the last view (board or timeline) from localStorage, default to dashboard
   const backHref = useMemo(() => {
-    if (typeof window === 'undefined') return '/';
+    if (typeof window === 'undefined') return '/dashboard';
     const lastView = localStorage.getItem('lastView');
-    return lastView === 'board' ? '/board' : '/';
+    return lastView === 'board' ? '/board' : '/dashboard';
   }, []);
 
   if (isLoading) {

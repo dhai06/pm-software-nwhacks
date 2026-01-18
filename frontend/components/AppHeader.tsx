@@ -13,7 +13,7 @@ export function AppHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const isBoard = pathname === '/board';
-  const isTimeline = pathname === '/' || pathname === '/timeline';
+  const isTimeline = pathname === '/dashboard' || pathname === '/timeline';
 
   const createTask = useProjectStore(state => state.createTask);
   const createDependency = useProjectStore(state => state.createDependency);
@@ -146,11 +146,11 @@ export function AppHeader() {
         {/* App title */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-stone-900">Task Manager</h1>
+            <h1 className="text-2xl font-bold text-stone-900">Cafe Opening</h1>
           </div>
           <AccountMenu />
         </div>
-        <p className="text-stone-400 text-sm">Manage and track your tasks</p>
+        <p className="text-stone-400 text-sm">Grand Opening June 2026</p>
       </div>
 
       {/* Navigation tabs */}
@@ -168,7 +168,7 @@ export function AppHeader() {
             Board
           </Link>
           <Link
-            href="/"
+            href="/dashboard"
             className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
               isTimeline
                 ? 'bg-stone-100 text-stone-900'

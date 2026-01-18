@@ -22,7 +22,7 @@ export function CPMButton() {
     <button
       onClick={handleClick}
       disabled={isSchedulingCPM}
-      className="fixed bottom-8 right-8 flex items-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-medium rounded-full shadow-lg hover:shadow-xl transition-all duration-200 z-50"
+      className="fixed bottom-8 right-8 flex items-center gap-2 px-4 py-3 bg-[#4E80EE] hover:bg-[#3D6FDD] disabled:bg-[#8BAAF3] text-white font-medium rounded-full shadow-lg hover:shadow-xl transition-all duration-200 z-50"
       title="Calculate Critical Path and auto-schedule tasks"
     >
       {isSchedulingCPM ? (

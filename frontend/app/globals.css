@@ -29,6 +29,20 @@ body {
   background-size: 40px 100%;
 }
 
+/* Pulsing animation for dependency arrows */
+@keyframes pulse-opacity {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.react-flow__edge.pulsing .react-flow__edge-path {
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
 /* Scrollbar styles */
 ::-webkit-scrollbar {
   width: 8px;

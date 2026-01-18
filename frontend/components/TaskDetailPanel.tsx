@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { format, differenceInDays, addDays } from 'date-fns';
-import { Calendar, CircleDot, Hash, List, Clock, FileText, Save, Check } from 'lucide-react';
+import { Calendar, CircleDot, Hash, List, Clock, FileText, Save, Check, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Task, TaskStatus, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
 import { useProjectStore } from '@/lib/store';
 
@@ -11,8 +12,10 @@ interface TaskDetailPanelProps {
 }
 
 export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
+  const router = useRouter();
   const dependentTask = useProjectStore(state => state.getDependentTask(task.id));
   const updateTask = useProjectStore(state => state.updateTask);
+  const deleteTask = useProjectStore(state => state.deleteTask);
 
   // Local state for form fields
   const [name, setName] = useState(task.name);
@@ -109,6 +112,14 @@ export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
     // Reset save status after 2 seconds
     setTimeout(() => setSaveStatus('idle'), 2000);
   }, [task.id, name, description, status, startDate, endDate, buffer, duration, updateTask]);
+
+  // Delete handler
+  const handleDelete = useCallback(async () => {
+    if (confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+      await deleteTask(task.id);
+      router.push('/dashboard');
+    }
+  }, [task.id, deleteTask, router]);
 
   const statusConfig = STATUS_COLORS[status];
 
@@ -249,8 +260,18 @@ export function TaskDetailPanel({ task }: TaskDetailPanelProps) {
         />
       </div>
 
-      {/* Save Button */}
-      <div className="mt-8 flex justify-end">
+      {/* Action Buttons */}
+      <div className="mt-8 flex justify-between items-center">
+        {/* Delete Button */}
+        <button
+          onClick={handleDelete}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-all"
+        >
+          <Trash2 size={16} />
+          Delete Task
+        </button>
+
+        {/* Save Button */}
         <button
           onClick={handleSave}
           disabled={!hasChanges || saveStatus === 'saving'}
