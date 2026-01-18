@@ -10,6 +10,9 @@ import {
   Position,
   MarkerType,
   NodeMouseHandler,
+  Handle,
+  BezierEdge,
+  EdgeProps,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
@@ -24,7 +27,8 @@ interface TimelineViewProps {
 }
 
 // Constants for timeline layout
-const DAY_WIDTH = 40;
+const DAY_WIDTH = 52;
+const DAY_GAP = 4;
 const ROW_HEIGHT = 60;
 const HEADER_HEIGHT = 80;
 const LEFT_MARGIN = 20;
@@ -46,6 +50,7 @@ function TaskNode({ data }: { data: { task: Task; projectId: string; width: numb
       className="bg-stone-100 border border-stone-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center gap-2"
       style={{ width: data.width, minWidth: 80 }}
     >
+      <Handle type="target" position={Position.Left} className="opacity-0" />
       {/* Status indicator dot */}
       <div
         className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor.dot}`}
@@ -54,6 +59,7 @@ function TaskNode({ data }: { data: { task: Task; projectId: string; width: numb
       <span className="text-sm font-medium text-stone-800 whitespace-nowrap overflow-hidden text-ellipsis">
         {data.task.name}
       </span>
+      <Handle type="source" position={Position.Right} className="opacity-0" />
     </div>
   );
 }
@@ -61,6 +67,18 @@ function TaskNode({ data }: { data: { task: Task; projectId: string; width: numb
 const nodeTypes = {
   taskNode: TaskNode,
 };
+
+// Custom edge component with aggressive curvature
+function CustomBezierEdge(props: EdgeProps) {
+  return <BezierEdge {...props} pathOptions={{ curvature: 3 }} />;
+}
+
+const edgeTypes = {
+  customBezier: CustomBezierEdge,
+};
+
+// Accent blue color for edges
+const EDGE_COLOR = '#3B82F6';
 
 export function TimelineView({ projectId, tasks, dependencies }: TimelineViewProps) {
   const router = useRouter();
@@ -177,32 +195,159 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
     setIsDragging(false);
   }, []);
 
-  // Calculate node positions based on task dates
+  // Calculate node positions based on task dates with dependency-aware layout
   const nodes: Node[] = useMemo(() => {
-    // Sort tasks by start date to assign rows
-    const sortedTasks = [...tasks].sort(
-      (a, b) => a.startDate.getTime() - b.startDate.getTime()
-    );
+    // Build dependency graph for topological sorting
+    const dependencyMap = new Map<string, string[]>(); // taskId -> tasks that depend on it
+    const prerequisiteMap = new Map<string, string[]>(); // taskId -> tasks it depends on
+    
+    tasks.forEach(task => {
+      dependencyMap.set(task.id, []);
+      prerequisiteMap.set(task.id, []);
+    });
+    
+    dependencies.forEach(dep => {
+      const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
+      const targetTask = tasks.find(t => t.id === dep.taskId);
+      if (sourceTask && targetTask) {
+        dependencyMap.get(dep.dependsOnTaskId)?.push(dep.taskId);
+        prerequisiteMap.get(dep.taskId)?.push(dep.dependsOnTaskId);
+      }
+    });
 
-    // Row assignment - avoid overlapping tasks (tasks cannot share the same day)
-    const rowEndDates: Date[] = [];
+    // Topological sort using Kahn's algorithm
+    const inDegree = new Map<string, number>();
+    tasks.forEach(task => {
+      inDegree.set(task.id, prerequisiteMap.get(task.id)?.length || 0);
+    });
+
+    const queue: Task[] = [];
+    const sortedTasks: Task[] = [];
+
+    // Start with tasks that have no prerequisites
+    tasks.forEach(task => {
+      if (inDegree.get(task.id) === 0) {
+        queue.push(task);
+      }
+    });
+
+    // Sort initial queue by start date for consistent ordering
+    queue.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+
+    while (queue.length > 0) {
+      // Sort queue by start date to prioritize earlier tasks
+      queue.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+      const task = queue.shift()!;
+      sortedTasks.push(task);
+
+      // Reduce in-degree for dependent tasks
+      const dependents = dependencyMap.get(task.id) || [];
+      dependents.forEach(depId => {
+        const newDegree = (inDegree.get(depId) || 1) - 1;
+        inDegree.set(depId, newDegree);
+        if (newDegree === 0) {
+          const depTask = tasks.find(t => t.id === depId);
+          if (depTask) queue.push(depTask);
+        }
+      });
+    }
+
+    // Add any remaining tasks (in case of cycles or disconnected tasks)
+    tasks.forEach(task => {
+      if (!sortedTasks.includes(task)) {
+        sortedTasks.push(task);
+      }
+    });
+
+    // Row assignment with dependency-aware collision avoidance
     const taskRows: Map<string, number> = new Map();
+    const rowEndDates: Date[] = [];
+    
+    // Track placed tasks with their time windows for vertical shadow checking
+    const placedTasks: Array<{ id: string; row: number; startDate: Date; endDate: Date }> = [];
+
+    // Helper: Check if placing a task at a row would intersect with any edge's vertical shadow
+    const wouldIntersectEdge = (taskStartDate: Date, taskEndDate: Date, targetRow: number, taskId: string): boolean => {
+      // Check all edges that might cross through this row
+      for (const dep of dependencies) {
+        const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
+        const targetTask = tasks.find(t => t.id === dep.taskId);
+        
+        if (!sourceTask || !targetTask) continue;
+        // Skip if this edge involves the task we're placing
+        if (dep.dependsOnTaskId === taskId || dep.taskId === taskId) continue;
+        
+        const sourceRow = taskRows.get(sourceTask.id);
+        const targetRowNum = taskRows.get(targetTask.id);
+        
+        // Both source and target must be already placed to check shadow
+        if (sourceRow === undefined || targetRowNum === undefined) continue;
+        
+        const minRow = Math.min(sourceRow, targetRowNum);
+        const maxRow = Math.max(sourceRow, targetRowNum);
+        
+        // Check if target row is between the edge's rows (exclusive)
+        if (targetRow <= minRow || targetRow >= maxRow) continue;
+        
+        // Calculate the time window where the edge exists
+        // Edge goes from source's end (right side) to target's start (left side)
+        const edgeStartX = sourceTask.targetCompletionDate;
+        const edgeEndX = targetTask.startDate;
+        
+        // If the edge time window overlaps with task time window, it's a collision
+        // Using a slightly expanded window for safety
+        const taskStart = taskStartDate.getTime();
+        const taskEnd = taskEndDate.getTime();
+        const edgeStart = Math.min(edgeStartX.getTime(), edgeEndX.getTime());
+        const edgeEnd = Math.max(edgeStartX.getTime(), edgeEndX.getTime());
+        
+        // Check for overlap
+        if (taskStart < edgeEnd && taskEnd > edgeStart) {
+          return true;
+        }
+      }
+      return false;
+    };
 
     sortedTasks.forEach(task => {
       let assignedRow = -1;
-      // Find the first row where the task can fit (start date must be >= end date since end date is not visually occupied)
-      for (let i = 0; i < rowEndDates.length; i++) {
-        if (task.startDate >= rowEndDates[i]) {
-          assignedRow = i;
-          break;
+      
+      // Find the first row where:
+      // 1. The task doesn't overlap time-wise with other tasks in that row
+      // 2. The task doesn't intersect any edge's vertical shadow
+      for (let row = 0; row <= rowEndDates.length; row++) {
+        // Check time overlap with existing tasks in this row
+        const timeConflict = row < rowEndDates.length && task.startDate < rowEndDates[row];
+        
+        if (!timeConflict) {
+          // Check vertical shadow intersection
+          if (!wouldIntersectEdge(task.startDate, task.targetCompletionDate, row, task.id)) {
+            assignedRow = row;
+            break;
+          }
         }
       }
-      // If no existing row works, create a new row
+      
+      // If no suitable row found, create a new one
       if (assignedRow === -1) {
         assignedRow = rowEndDates.length;
       }
+      
       taskRows.set(task.id, assignedRow);
-      rowEndDates[assignedRow] = task.targetCompletionDate;
+      
+      // Update row end date (extend if necessary)
+      if (assignedRow >= rowEndDates.length) {
+        rowEndDates.push(task.targetCompletionDate);
+      } else if (task.targetCompletionDate > rowEndDates[assignedRow]) {
+        rowEndDates[assignedRow] = task.targetCompletionDate;
+      }
+      
+      placedTasks.push({
+        id: task.id,
+        row: assignedRow,
+        startDate: task.startDate,
+        endDate: task.targetCompletionDate,
+      });
     });
 
     return tasks.map(task => {
@@ -210,13 +355,13 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
       const row = taskRows.get(task.id) || 0;
       // Calculate width based on duration from start to end date (exclusive of end date)
       const durationDays = differenceInDays(task.targetCompletionDate, task.startDate);
-      const width = durationDays * DAY_WIDTH;
+      const width = durationDays * (DAY_WIDTH + DAY_GAP) - DAY_GAP;
 
       return {
         id: task.id,
         type: 'taskNode',
         position: {
-          x: LEFT_MARGIN + dayOffset * DAY_WIDTH,
+          x: LEFT_MARGIN + dayOffset * (DAY_WIDTH + DAY_GAP),
           y: HEADER_HEIGHT + row * ROW_HEIGHT,
         },
         data: { task, projectId, width },
@@ -224,9 +369,9 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         targetPosition: Position.Left,
       };
     });
-  }, [tasks, startDate, projectId]);
+  }, [tasks, dependencies, startDate, projectId]);
 
-  // Create edges for dependencies with curved bezier arrows
+  // Create edges for dependencies with aggressive Bezier curves and open arrow markers
   const edges: Edge[] = useMemo(() => {
     return dependencies
       .filter(dep => {
@@ -238,13 +383,13 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         id: `${dep.dependsOnTaskId}-${dep.taskId}`,
         source: dep.dependsOnTaskId,
         target: dep.taskId,
-        type: 'default', // Bezier curve for smooth curved arrows
-        style: { stroke: '#8B95A5', strokeWidth: 2 },
+        type: 'customBezier',
+        style: { stroke: EDGE_COLOR, strokeWidth: 2 , strokeLinecap: 'round'},
         markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: '#8B95A5',
-          width: 15,
-          height: 15,
+          type: MarkerType.Arrow,
+          color: EDGE_COLOR,
+          width: 20,
+          height: 20,
         },
       }));
   }, [dependencies, tasks]);
@@ -380,7 +525,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         {/* Date header */}
         <div
           className="sticky top-0 z-10 bg-stone-50 border-b border-stone-200 flex"
-          style={{ minWidth: days.length * DAY_WIDTH + LEFT_MARGIN }}
+          style={{ minWidth: days.length * (DAY_WIDTH + DAY_GAP) + LEFT_MARGIN }}
         >
           <div style={{ width: LEFT_MARGIN }} />
           {days.map((day, index) => {
@@ -390,9 +535,9 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             return (
               <div
                 key={index}
-                className={`flex-shrink-0 text-center py-2 text-sm ${isWeekend ? 'bg-stone-100' : ''
+                className={`flex-shrink-0 text-center py-2 text-sm rounded ${isWeekend ? 'bg-stone-100' : ''
                   }`}
-                style={{ width: DAY_WIDTH }}
+                style={{ width: DAY_WIDTH, marginRight: DAY_GAP }}
               >
                 <span className={`${isToday ? 'bg-accent text-white rounded-full px-2 py-1' : 'text-stone-400'}`}>
                   {format(day, 'd')}
@@ -406,7 +551,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
         <div
           style={{
             height: Math.max(400, (nodes.length + 1) * ROW_HEIGHT + HEADER_HEIGHT),
-            minWidth: days.length * DAY_WIDTH + LEFT_MARGIN,
+            minWidth: days.length * (DAY_WIDTH + DAY_GAP) + LEFT_MARGIN,
             position: 'relative'
           }}
         >
@@ -418,9 +563,9 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             return (
               <div
                 key={`weekend-${index}`}
-                className="absolute bg-stone-100"
+                className="absolute bg-stone-100 rounded"
                 style={{
-                  left: LEFT_MARGIN + index * DAY_WIDTH,
+                  left: LEFT_MARGIN + index * (DAY_WIDTH + DAY_GAP),
                   top: 0,
                   width: DAY_WIDTH,
                   height: '100%',
@@ -433,7 +578,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
           <div
             className="absolute bg-accent"
             style={{
-              left: LEFT_MARGIN + todayOffset * DAY_WIDTH + DAY_WIDTH / 2 - 1,
+              left: LEFT_MARGIN + todayOffset * (DAY_WIDTH + DAY_GAP) + DAY_WIDTH / 2 - 1,
               top: 0,
               width: 2,
               height: '100%',
@@ -445,6 +590,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView={false}
             panOnDrag={false}
             zoomOnScroll={false}
@@ -459,7 +605,7 @@ export function TimelineView({ projectId, tasks, dependencies }: TimelineViewPro
             maxZoom={1}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
           >
-            <Background color="#E6E4DD" gap={DAY_WIDTH} />
+            <Background color="#E6E4DD" gap={DAY_WIDTH + DAY_GAP} />
           </ReactFlow>
         </div>
       </div>
