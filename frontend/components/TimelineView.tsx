@@ -45,9 +45,17 @@ const AVAILABLE_MONTHS = [
 function TaskNode({ data }: { data: {
   task: Task;
   width: number;
+  isInvalid?: boolean;
   onResizeStart?: (taskId: string, edge: 'left' | 'right', e: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 } }) {
   const statusColor = STATUS_COLORS[data.task.status];
+
+  // Conditional styling for invalid tasks
+  const baseClasses = data.isInvalid
+    ? 'bg-red-100 border border-red-300'
+    : 'bg-stone-100 border border-stone-200';
 
   const handleLeftEdgeMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -61,8 +69,10 @@ function TaskNode({ data }: { data: {
 
   return (
     <div
-      className="bg-stone-100 border border-stone-200 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing flex items-center relative group"
+      className={`${baseClasses} rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing flex items-center relative group`}
       style={{ width: data.width, minWidth: 80, height: 36 }}
+      onMouseEnter={data.onMouseEnter}
+      onMouseLeave={data.onMouseLeave}
     >
       <Handle type="target" position={Position.Left} className="opacity-0" />
 
@@ -102,6 +112,24 @@ const nodeTypes = {
 
 // Accent blue color for edges
 const EDGE_COLOR = '#3B82F6';
+
+// Helper function to check if a task violates dependency constraints
+function isTaskInvalid(
+  task: Task,
+  allTasks: Task[],
+  allDependencies: TaskDependency[]
+): boolean {
+  // Find all dependencies where this task depends on another
+  const prerequisites = allDependencies.filter(dep => dep.taskId === task.id);
+
+  for (const dep of prerequisites) {
+    const prerequisiteTask = allTasks.find(t => t.id === dep.dependsOnTaskId);
+    if (prerequisiteTask && task.startDate < prerequisiteTask.targetCompletionDate) {
+      return true; // Task starts before prerequisite finishes
+    }
+  }
+  return false;
+}
 
 function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
   const router = useRouter();
@@ -341,7 +369,13 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
       const newStartDate = addDays(task.startDate, dayOffset);
       const newEndDate = addDays(task.targetCompletionDate, dayOffset);
 
-      // Update the task in the store
+      // Check if new position creates a conflict
+      const updatedTask = { ...task, startDate: newStartDate, targetCompletionDate: newEndDate };
+      if (isTaskInvalid(updatedTask, tasks, dependencies)) {
+        console.warn(`Task "${task.name}" now starts before a prerequisite finishes.`);
+      }
+
+      // Update the task in the store (soft constraint - always allow the drop)
       updateTask(task.id, {
         startDate: newStartDate,
         targetCompletionDate: newEndDate,
@@ -352,266 +386,62 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
     isDraggingNodeRef.current = false;
     dragStartPositionRef.current = null;
     draggedTaskRef.current = null;
-  }, [updateTask]);
+  }, [updateTask, tasks, dependencies]);
 
-  // Calculate node positions based on task dates with TWO-PASS dependency-aware layout
+  // State for hover-based dependency visualization
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+
+  // Calculate node positions with simple waterfall layout (each task gets its own row)
   const nodes: Node[] = useMemo(() => {
-    // Build dependency graph for topological sorting
-    const dependencyMap = new Map<string, string[]>(); // taskId -> tasks that depend on it
-    const prerequisiteMap = new Map<string, string[]>(); // taskId -> tasks it depends on
+    // Sort tasks by start date ascending
+    const sortedTasks = [...tasks].sort((a, b) =>
+      a.startDate.getTime() - b.startDate.getTime()
+    );
 
-    tasks.forEach(task => {
-      dependencyMap.set(task.id, []);
-      prerequisiteMap.set(task.id, []);
-    });
-
-    dependencies.forEach(dep => {
-      const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
-      const targetTask = tasks.find(t => t.id === dep.taskId);
-      if (sourceTask && targetTask) {
-        dependencyMap.get(dep.dependsOnTaskId)?.push(dep.taskId);
-        prerequisiteMap.get(dep.taskId)?.push(dep.dependsOnTaskId);
-      }
-    });
-
-    // Topological sort using Kahn's algorithm
-    const inDegree = new Map<string, number>();
-    tasks.forEach(task => {
-      inDegree.set(task.id, prerequisiteMap.get(task.id)?.length || 0);
-    });
-
-    const queue: Task[] = [];
-    const sortedTasks: Task[] = [];
-
-    // Start with tasks that have no prerequisites
-    tasks.forEach(task => {
-      if (inDegree.get(task.id) === 0) {
-        queue.push(task);
-      }
-    });
-
-    // Sort initial queue by start date for consistent ordering
-    queue.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
-
-    while (queue.length > 0) {
-      // Sort queue by start date to prioritize earlier tasks
-      queue.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
-      const task = queue.shift()!;
-      sortedTasks.push(task);
-
-      // Reduce in-degree for dependent tasks
-      const dependents = dependencyMap.get(task.id) || [];
-      dependents.forEach(depId => {
-        const newDegree = (inDegree.get(depId) || 1) - 1;
-        inDegree.set(depId, newDegree);
-        if (newDegree === 0) {
-          const depTask = tasks.find(t => t.id === depId);
-          if (depTask) queue.push(depTask);
-        }
-      });
-    }
-
-    // Add any remaining tasks (in case of cycles or disconnected tasks)
-    tasks.forEach(task => {
-      if (!sortedTasks.includes(task)) {
-        sortedTasks.push(task);
-      }
-    });
-
-    // =====================================================
-    // EDGE-AWARE ROW ASSIGNMENT ALGORITHM
-    // When an edge conflicts with a task, move that task out of the edge's path
-    // by keeping it in place and pushing all OTHER tasks down
-    // =====================================================
-
-    const taskRows: Map<string, number> = new Map();
-
-    // Helper: Check if two time ranges overlap
-    const timeRangesOverlap = (start1: Date, end1: Date, start2: Date, end2: Date): boolean => {
-      return start1.getTime() <= end2.getTime() && end1.getTime() >= start2.getTime();
-    };
-
-    // Helper: Check if a task can fit in a row (no time overlap with other tasks)
-    const canFitInRow = (task: Task, row: number): boolean => {
-      for (const other of tasks) {
-        if (other.id === task.id) continue;
-        if (taskRows.get(other.id) !== row) continue;
-        if (timeRangesOverlap(task.startDate, task.targetCompletionDate,
-                              other.startDate, other.targetCompletionDate)) {
-          return false;
-        }
-      }
-      return true;
-    };
-
-    // Helper: Calculate edge shadow - which rows and time ranges the edge occupies
-    const getEdgeShadow = (dep: TaskDependency) => {
-      const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
-      const targetTask = tasks.find(t => t.id === dep.taskId);
-
-      if (!sourceTask || !targetTask) return null;
-
-      const sourceRow = taskRows.get(sourceTask.id);
-      const targetRow = taskRows.get(targetTask.id);
-
-      if (sourceRow === undefined || targetRow === undefined) return null;
-
-      // Skip edges on same row (no vertical component)
-      if (sourceRow === targetRow) return null;
-
-      const edgeStartTime = sourceTask.targetCompletionDate.getTime();
-      const edgeEndTime = targetTask.startDate.getTime();
-
-      // Calculate the vertical segment position: 1 day before target task starts
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-      const verticalSegmentTime = Math.max(edgeStartTime, edgeEndTime - ONE_DAY_MS);
-
-      return {
-        sourceRow,
-        targetRow,
-        minRow: Math.min(sourceRow, targetRow),
-        maxRow: Math.max(sourceRow, targetRow),
-        edgeStartTime,
-        edgeEndTime,
-        verticalSegmentTime,
-        sourceTaskId: sourceTask.id,
-        targetTaskId: targetTask.id,
-      };
-    };
-
-    // Helper: Check if a task intersects with an edge
-    // Uses inclusive boundaries (<=, >=) to catch edge cases
-    const taskIntersectsEdge = (task: Task, edgeShadow: ReturnType<typeof getEdgeShadow>): boolean => {
-      if (!edgeShadow) return false;
-
-      const taskRow = taskRows.get(task.id);
-      if (taskRow === undefined) return false;
-
-      // Skip if this task is an endpoint of the edge
-      if (task.id === edgeShadow.sourceTaskId || task.id === edgeShadow.targetTaskId) {
-        return false;
-      }
-
-      const taskStartTime = task.startDate.getTime();
-      const taskEndTime = task.targetCompletionDate.getTime();
-
-      // Check based on which part of the edge might intersect
-      if (taskRow === edgeShadow.sourceRow) {
-        // Task is on source row - check horizontal segment from edge start to vertical
-        const segmentStart = edgeShadow.edgeStartTime;
-        const segmentEnd = edgeShadow.verticalSegmentTime;
-        return taskStartTime <= segmentEnd && taskEndTime >= segmentStart;
-      } else if (taskRow === edgeShadow.targetRow) {
-        // Task is on target row - check horizontal segment from vertical to edge end
-        const segmentStart = edgeShadow.verticalSegmentTime;
-        const segmentEnd = edgeShadow.edgeEndTime;
-        return taskStartTime <= segmentEnd && taskEndTime >= segmentStart;
-      } else if (taskRow > edgeShadow.minRow && taskRow < edgeShadow.maxRow) {
-        // Task is on intermediate row - only the vertical segment passes through
-        // Check if task spans the vertical segment's X position
-        return taskStartTime <= edgeShadow.verticalSegmentTime &&
-               taskEndTime >= edgeShadow.verticalSegmentTime;
-      }
-
-      return false;
-    };
-
-    // =====================================================
-    // PASS 1: Initial row assignment (time-overlap only)
-    // =====================================================
-    sortedTasks.forEach(task => {
-      let assignedRow = 0;
-      while (!canFitInRow(task, assignedRow)) {
-        assignedRow++;
-      }
-      taskRows.set(task.id, assignedRow);
-    });
-
-    // =====================================================
-    // PASS 2: Edge collision resolution
-    // When a task conflicts with an edge:
-    // Move ALL other tasks down by 1, EXCEPT the conflicting task
-    // This effectively moves the conflicting task to row 0 (top)
-    // =====================================================
-    const MAX_ITERATIONS = 100;
-    let iteration = 0;
-    let hasConflicts = true;
-
-    while (hasConflicts && iteration < MAX_ITERATIONS) {
-      hasConflicts = false;
-      iteration++;
-
-      // Check each edge for conflicts
-      for (const dep of dependencies) {
-        const edgeShadow = getEdgeShadow(dep);
-        if (!edgeShadow) continue;
-
-        // Find any task that intersects with this edge
-        for (const task of tasks) {
-          if (taskIntersectsEdge(task, edgeShadow)) {
-            hasConflicts = true;
-
-            // Strategy: Move ALL tasks down by 1, EXCEPT the conflicting task
-            // This effectively moves the conflicting task to the top
-            const conflictingTaskId = task.id;
-            
-            for (const t of tasks) {
-              if (t.id === conflictingTaskId) continue; // Keep conflicting task in place
-              
-              const currentRow = taskRows.get(t.id);
-              if (currentRow !== undefined) {
-                taskRows.set(t.id, currentRow + 1);
-              }
-            }
-
-            // Break and restart to recalculate edge shadows with new positions
-            break;
-          }
-        }
-
-        if (hasConflicts) break;
-      }
-    }
-
-    // =====================================================
-    // PASS 3: Normalize rows (shift everything so minimum row is 0)
-    // =====================================================
-    const minRow = Math.min(...Array.from(taskRows.values()));
-    if (minRow !== 0) {
-      for (const [taskId, row] of taskRows.entries()) {
-        taskRows.set(taskId, row - minRow);
-      }
-    }
-
-    return tasks.map(task => {
+    return sortedTasks.map((task, index) => {
       // Check if this task has a resize preview
       const preview = resizePreview?.taskId === task.id ? resizePreview : null;
       const effectiveStartDate = preview?.newStartDate || task.startDate;
       const effectiveEndDate = preview?.newEndDate || task.targetCompletionDate;
 
       const dayOffset = differenceInDays(effectiveStartDate, startDate);
-      const row = taskRows.get(task.id) || 0;
       // Calculate width based on duration from start to end date (exclusive of end date)
       const durationDays = differenceInDays(effectiveEndDate, effectiveStartDate);
       const width = Math.max(durationDays * (DAY_WIDTH + DAY_GAP) - DAY_GAP, 80);
+
+      // Check if task violates dependency constraints
+      const isInvalid = isTaskInvalid(task, tasks, dependencies);
 
       return {
         id: task.id,
         type: 'taskNode',
         position: {
           x: LEFT_MARGIN + dayOffset * (DAY_WIDTH + DAY_GAP),
-          y: HEADER_HEIGHT + row * ROW_HEIGHT,
+          y: HEADER_HEIGHT + (index * ROW_HEIGHT), // Simple waterfall: each task gets its own row
         },
-        data: { task, width, onResizeStart: handleResizeStart },
+        data: {
+          task,
+          width,
+          isInvalid,
+          onResizeStart: handleResizeStart,
+          onMouseEnter: () => setHoveredTaskId(task.id),
+          onMouseLeave: () => setHoveredTaskId(null),
+        },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
     });
   }, [tasks, dependencies, startDate, resizePreview, handleResizeStart]);
 
-  // Create edges for dependencies using smoothstep routing
+  // Create edges for dependencies - only show when a task is hovered
   const edges: Edge[] = useMemo(() => {
+    if (!hoveredTaskId) return [];
+
     return dependencies
+      .filter(dep => {
+        // Show edges connected to hovered task (incoming or outgoing)
+        return dep.taskId === hoveredTaskId || dep.dependsOnTaskId === hoveredTaskId;
+      })
       .filter(dep => {
         const sourceTask = tasks.find(t => t.id === dep.dependsOnTaskId);
         const targetTask = tasks.find(t => t.id === dep.taskId);
@@ -621,8 +451,9 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
         id: `${dep.dependsOnTaskId}-${dep.taskId}`,
         source: dep.dependsOnTaskId,
         target: dep.taskId,
-        type: 'smoothstep',
-        style: { stroke: EDGE_COLOR, strokeWidth: 2, strokeLinecap: 'round' },
+        type: 'bezier',
+        animated: true,
+        style: { stroke: EDGE_COLOR, strokeWidth: 2 },
         markerEnd: {
           type: MarkerType.Arrow,
           color: EDGE_COLOR,
@@ -630,7 +461,7 @@ function TimelineViewInner({ tasks, dependencies }: TimelineViewProps) {
           height: 20,
         },
       }));
-  }, [dependencies, tasks]);
+  }, [dependencies, tasks, hoveredTaskId]);
 
   // Handle node clicks - navigate to task page and store current view
   // Don't navigate if we just finished dragging
